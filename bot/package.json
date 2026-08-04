@@ -1,0 +1,14 @@
+{
+  "name": "@workspace/bot",
+  "version": "1.0.0",
+  "description": "Minecraft AFK Bot for ashraf707-OInC.aternos.me",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "minecraft-protocol": "github:PrismarineJS/node-minecraft-protocol",
+    "mineflayer": "github:PrismarineJS/mineflayer"
+  }
+}
