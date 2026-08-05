@@ -99,10 +99,8 @@ function createBot() {
   async function rightClickInventoryItem() {
     if (!bot.entity) return;
 
-    // اختار أي أيتم في الـ inventory مش درع
-    const item = bot.inventory.items().find(i =>
-      !armorNames.some(a => i.name.includes(a))
-    );
+    // اختار أي أيتم في الـ inventory
+    const item = bot.inventory.items()[0];
 
     if (!item) return;
 
