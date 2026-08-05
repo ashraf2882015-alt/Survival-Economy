@@ -1,5 +1,4 @@
 const mineflayer = require('mineflayer');
-const armorManager = require('mineflayer-armor-manager');
 const config = require('./config.json');
 
 let bot;
@@ -92,9 +91,30 @@ function createBot() {
 
   let chatInterval = null;
 
-  // ===== Events =====
-  bot.loadPlugin(armorManager);
+  // ===== لبس الدروع تلقائياً =====
+  const armorSlots = {
+    head:  ['netherite_helmet',     'diamond_helmet',     'iron_helmet',     'golden_helmet',     'chainmail_helmet',     'leather_helmet'],
+    torso: ['netherite_chestplate', 'diamond_chestplate', 'iron_chestplate', 'golden_chestplate', 'chainmail_chestplate', 'leather_chestplate'],
+    legs:  ['netherite_leggings',   'diamond_leggings',   'iron_leggings',   'golden_leggings',   'chainmail_leggings',   'leather_leggings'],
+    feet:  ['netherite_boots',      'diamond_boots',      'iron_boots',      'golden_boots',      'chainmail_boots',      'leather_boots'],
+  };
 
+  async function equipArmor() {
+    for (const [slot, items] of Object.entries(armorSlots)) {
+      for (const itemName of items) {
+        const item = bot.inventory.items().find(i => i.name === itemName);
+        if (item) {
+          try {
+            await bot.equip(item, slot);
+            console.log(`🛡️ Equipped ${itemName} on ${slot}`);
+          } catch (e) { /* already equipped or error */ }
+          break;
+        }
+      }
+    }
+  }
+
+  // ===== Events =====
   bot.on('spawn', () => {
     setTimeout(() => {
       bot.setControlState('sneak', true);
@@ -103,11 +123,21 @@ function createBot() {
 
     setTimeout(movementCycle, STEP_INTERVAL);
 
+    // لبس الدروع عند الاتصال
+    setTimeout(equipArmor, 4000);
+
     // رسالة شات كل ساعة
     chatInterval = setInterval(sendHourlyChat, 60 * 60 * 1000);
 
     // تأرجح اليد كل 30 ثانية بشكل مستقل
     armInterval = setInterval(swingArm, randomInterval(30000));
+  });
+
+  // لبس الدروع تلقائياً لما تتغير الـ inventory
+  bot.on('playerCollect', (collector) => {
+    if (collector.username === config.botUsername) {
+      setTimeout(equipArmor, 1000);
+    }
   });
 
   bot.on('chat', (username, message) => {
