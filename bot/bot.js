@@ -82,9 +82,6 @@ function createBot() {
     setTimeout(() => {
       bot.setControlState('sneak', true);
       console.log(`✅ ${config.botUsername} is Ready! Connected to ${config.serverHost}:${config.serverPort}`);
-      // تغيير الشكل لروبوت عبر SkinsRestorer
-      bot.chat('/skin set R0B0T_');
-      console.log('🎨 Skin change command sent!');
     }, 3000);
 
     setTimeout(movementCycle, STEP_INTERVAL);
