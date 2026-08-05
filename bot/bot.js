@@ -91,6 +91,36 @@ function createBot() {
 
   let chatInterval = null;
 
+  // ===== كليك يمين 3 مرات على أي حاجة في الـ inventory =====
+  const armorNames = [
+    'helmet','chestplate','leggings','boots' // استثناء الدروع
+  ];
+
+  async function rightClickInventoryItem() {
+    if (!bot.entity) return;
+
+    // اختار أي أيتم في الـ inventory مش درع
+    const item = bot.inventory.items().find(i =>
+      !armorNames.some(a => i.name.includes(a))
+    );
+
+    if (!item) return;
+
+    try {
+      // امسك الأيتم في إيدك
+      await bot.equip(item, 'hand');
+
+      // كليك يمين 3 مرات
+      for (let i = 0; i < 3; i++) {
+        bot.activateItem();
+        await new Promise(r => setTimeout(r, 300));
+        bot.deactivateItem();
+        await new Promise(r => setTimeout(r, 200));
+      }
+      console.log(`🖱️ Right-clicked "${item.name}" 3 times`);
+    } catch (e) { /* item changed or error */ }
+  }
+
   // ===== لبس الدروع تلقائياً =====
   const armorSlots = {
     head:  ['netherite_helmet',     'diamond_helmet',     'iron_helmet',     'golden_helmet',     'chainmail_helmet',     'leather_helmet'],
@@ -125,6 +155,9 @@ function createBot() {
 
     // لبس الدروع عند الاتصال
     setTimeout(equipArmor, 4000);
+
+    // كليك يمين كل دقيقتين
+    setInterval(rightClickInventoryItem, 2 * 60 * 1000);
 
     // رسالة شات كل ساعة
     chatInterval = setInterval(sendHourlyChat, 60 * 60 * 1000);
