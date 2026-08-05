@@ -1,4 +1,5 @@
 const mineflayer = require('mineflayer');
+const armorManager = require('mineflayer-armor-manager');
 const config = require('./config.json');
 
 let bot;
@@ -92,6 +93,8 @@ function createBot() {
   let chatInterval = null;
 
   // ===== Events =====
+  bot.loadPlugin(armorManager);
+
   bot.on('spawn', () => {
     setTimeout(() => {
       bot.setControlState('sneak', true);
