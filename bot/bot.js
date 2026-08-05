@@ -50,13 +50,27 @@ function createBot() {
     ['forward','back','left','right','jump','sneak','sprint'].forEach(s => bot.setControlState(s, false));
   }
 
+  function randomInterval(base) {
+    // فترة عشوائية بين 80% و120% من الأساس لتجنب كشف الأنماط
+    return base * (0.8 + Math.random() * 0.4);
+  }
+
+  function swingArm() {
+    if (!bot.entity) return;
+    bot.swingArm();
+  }
+
   function movementCycle() {
     if (!bot.entity) return;
     stopAll();
     movements[movementPhase]();
+    swingArm(); // تأرجح اليد مع كل حركة
     movementPhase = (movementPhase + 1) % movements.length;
-    setTimeout(movementCycle, STEP_INTERVAL);
+    setTimeout(movementCycle, randomInterval(STEP_INTERVAL));
   }
+
+  // تأرجح اليد كل 30 ثانية بشكل مستقل
+  let armInterval = null;
 
   // ===== Chat Message Every Hour =====
   const chatMessages = [
@@ -88,6 +102,9 @@ function createBot() {
 
     // رسالة شات كل ساعة
     chatInterval = setInterval(sendHourlyChat, 60 * 60 * 1000);
+
+    // تأرجح اليد كل 30 ثانية بشكل مستقل
+    armInterval = setInterval(swingArm, randomInterval(30000));
   });
 
   bot.on('chat', (username, message) => {
@@ -101,6 +118,7 @@ function createBot() {
 
   bot.on('end', (reason) => {
     if (chatInterval) { clearInterval(chatInterval); chatInterval = null; }
+    if (armInterval) { clearInterval(armInterval); armInterval = null; }
     console.log(`⛔ Bot Disconnected (${reason}). Reconnecting in 5s...`);
     setTimeout(createBot, 5000);
   });
