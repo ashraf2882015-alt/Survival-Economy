@@ -1,7 +1,7 @@
 {
   "serverHost": "ashraf707-OInC.aternos.me",
   "serverPort": 58119,
-  "botUsername": "روبوت",
+  "botUsername": "AFKBot",
   "botChunk": 1,
   "version": "1.21.4"
 }
