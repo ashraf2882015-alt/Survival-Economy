@@ -16,8 +16,10 @@ let armorTimer = null;
 let rightClickBusy = false;
 let armorBusy = false;
 
-const RECONNECT_MIN = 5000;
-const RECONNECT_MAX = 60000;
+// Keep retrying indefinitely if the Minecraft server is offline/unreachable.
+// A short capped delay is used so the bot keeps checking without hammering the server.
+const RECONNECT_MIN = 10000;
+const RECONNECT_MAX = 15000;
 const SPAWN_TIMEOUT = 45000;
 const WATCHDOG_INTERVAL = 15000;
 const STEP_INTERVAL = 1200;
@@ -46,14 +48,21 @@ function cleanupTimers() {
   stopMovement();
 }
 
-function randomInterval(base) { return base * (0.8 + Math.random() * 0.4); }
-
 function scheduleReconnect(reason = 'connection ended') {
   if (shuttingDown || reconnectTimer) return;
+
   cleanupTimers();
   reconnectAttempt += 1;
-  const delay = Math.min(RECONNECT_MAX, RECONNECT_MIN * Math.pow(2, Math.min(reconnectAttempt - 1, 4)));
-  console.log(`🔄 Reconnect #${reconnectAttempt} in ${Math.ceil(delay / 1000)}s — ${reason}`);
+
+  // Retry forever. The delay never grows beyond 15 seconds.
+  const delay = Math.min(
+    RECONNECT_MAX,
+    RECONNECT_MIN + Math.min(reconnectAttempt - 1, 5) * 1000
+  );
+
+  console.log(`🔄 Retry #${reconnectAttempt} in ${Math.ceil(delay / 1000)}s — ${reason}`);
+  console.log('♾️ The bot will keep retrying until the server becomes reachable or the process is stopped.');
+
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     createBot();
@@ -97,17 +106,34 @@ function createBot() {
   function movementCycle() {
     if (!bot?.entity || shuttingDown) return;
     lastEntityTime = Date.now();
-    try { stopMovement(); movements[movementPhase](); swingArm(); movementPhase = (movementPhase + 1) % movements.length; }
-    catch (err) { console.log('⚠️ Movement error:', err.message); }
-    movementTimer = setTimeout(movementCycle, randomInterval(STEP_INTERVAL));
+    try {
+      stopMovement();
+      movements[movementPhase]();
+      swingArm();
+      movementPhase = (movementPhase + 1) % movements.length;
+    } catch (err) {
+      console.log('⚠️ Movement error:', err.message);
+    }
+    movementTimer = setTimeout(movementCycle, STEP_INTERVAL * (0.8 + Math.random() * 0.4));
   }
 
-  const chatMessages = ['AFK Bot is active!','Still here, keeping the server alive!','Bot running smoothly.','Server is alive and well!'];
+  const chatMessages = [
+    'AFK Bot is active!',
+    'Still here, keeping the server alive!',
+    'Bot running smoothly.',
+    'Server is alive and well!'
+  ];
   let chatIndex = 0;
+
   function sendHourlyChat() {
     if (!bot?.entity) return;
-    try { const msg = chatMessages[chatIndex++ % chatMessages.length]; bot.chat(msg); console.log(`💬 Bot said: "${msg}"`); }
-    catch (err) { console.log('⚠️ Chat error:', err.message); }
+    try {
+      const msg = chatMessages[chatIndex++ % chatMessages.length];
+      bot.chat(msg);
+      console.log(`💬 Bot said: "${msg}"`);
+    } catch (err) {
+      console.log('⚠️ Chat error:', err.message);
+    }
   }
 
   async function rightClickInventoryItem() {
@@ -125,7 +151,9 @@ function createBot() {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
       console.log(`🖱️ Right-clicked "${item.name}" 3 times`);
-    } catch (_) {} finally { rightClickBusy = false; }
+    } catch (_) {} finally {
+      rightClickBusy = false;
+    }
   }
 
   const armorSlots = {
@@ -144,17 +172,29 @@ function createBot() {
         for (const itemName of items) {
           const item = bot.inventory.items().find(i => i.name === itemName);
           if (!item) continue;
-          try { await bot.equip(item, slot); console.log(`🛡️ Equipped ${itemName} on ${slot}`); } catch (_) {}
+          try {
+            await bot.equip(item, slot);
+            console.log(`🛡️ Equipped ${itemName} on ${slot}`);
+          } catch (_) {}
           break;
         }
       }
-    } finally { armorBusy = false; }
+    } finally {
+      armorBusy = false;
+    }
   }
 
   function watchdog() {
     if (!bot || shuttingDown) return;
-    if (!bot.entity) { try { bot.quit('Watchdog reconnect'); } catch (_) {} scheduleReconnect('watchdog: no entity'); return; }
-    if (Date.now() - lastEntityTime > 120000) { try { bot.quit('Watchdog timeout'); } catch (_) {} scheduleReconnect('watchdog timeout'); }
+    if (!bot.entity) {
+      try { bot.quit('Watchdog reconnect'); } catch (_) {}
+      scheduleReconnect('watchdog: no entity');
+      return;
+    }
+    if (Date.now() - lastEntityTime > 120000) {
+      try { bot.quit('Watchdog timeout'); } catch (_) {}
+      scheduleReconnect('watchdog timeout');
+    }
   }
 
   bot.once('spawn', () => {
@@ -163,7 +203,11 @@ function createBot() {
     lastEntityTime = Date.now();
     spawnTimer = safeClearTimeout(spawnTimer);
     console.log(`✅ ${config.botUsername} connected to ${config.serverHost}:${config.serverPort}`);
-    setTimeout(() => { if (bot?.entity) try { bot.setControlState('sneak', true); } catch (_) {} }, 3000);
+
+    setTimeout(() => {
+      if (bot?.entity) try { bot.setControlState('sneak', true); } catch (_) {}
+    }, 3000);
+
     movementTimer = setTimeout(movementCycle, STEP_INTERVAL);
     armorTimer = setTimeout(equipArmor, 4000);
     rightClickInterval = setInterval(rightClickInventoryItem, 2 * 60 * 1000);
@@ -173,16 +217,30 @@ function createBot() {
   });
 
   spawnTimer = setTimeout(() => {
-    if (!bot?.entity && !shuttingDown) { try { bot.quit('Spawn timeout'); } catch (_) {} scheduleReconnect('spawn timeout'); }
+    if (!bot?.entity && !shuttingDown) {
+      console.log('⏳ Spawn timeout — server did not accept the bot yet. Retrying forever.');
+      try { bot.quit('Spawn timeout'); } catch (_) {}
+      scheduleReconnect('spawn timeout');
+    }
   }, SPAWN_TIMEOUT);
 
   bot.on('playerCollect', collector => {
-    if (collector.username === config.botUsername) { armorTimer = safeClearTimeout(armorTimer); armorTimer = setTimeout(equipArmor, 1000); }
+    if (collector.username === config.botUsername) {
+      armorTimer = safeClearTimeout(armorTimer);
+      armorTimer = setTimeout(equipArmor, 1000);
+    }
   });
-  bot.on('chat', (username, message) => { if (username !== config.botUsername) console.log(`💬 [${username}]: ${message}`); });
+
+  bot.on('chat', (username, message) => {
+    if (username !== config.botUsername) console.log(`💬 [${username}]: ${message}`);
+  });
+
   bot.on('error', err => console.error('⚠️ Error:', err.message));
   bot.on('kicked', reason => console.log(`🚫 Bot was kicked: ${reason}`));
-  bot.on('end', reason => { console.log(`⛔ Bot disconnected: ${reason || 'unknown reason'}`); scheduleReconnect(reason || 'connection ended'); });
+  bot.on('end', reason => {
+    console.log(`⛔ Bot disconnected: ${reason || 'unknown reason'}`);
+    scheduleReconnect(reason || 'connection ended');
+  });
 }
 
 function start() {
@@ -228,6 +286,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 console.log(`🤖 Starting AFK Bot → ${config.serverHost}:${config.serverPort}`);
+console.log('♾️ Automatic reconnect is enabled indefinitely.');
 start();
 
 module.exports = {
