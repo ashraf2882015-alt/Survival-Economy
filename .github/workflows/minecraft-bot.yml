@@ -1,0 +1,43 @@
+name: Minecraft Bot
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'bot/**'
+      - '.github/workflows/minecraft-bot.yml'
+  schedule:
+    # Start a fresh runner every 6 hours. GitHub Actions is not a guaranteed 24/7 host.
+    - cron: '0 */6 * * *'
+
+concurrency:
+  group: minecraft-bot
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    defaults:
+      run:
+        working-directory: bot
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bot/package.json
+
+      - name: Install bot dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Start Minecraft bot
+        run: npm start
