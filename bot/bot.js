@@ -23,10 +23,6 @@ const RECONNECT_MIN = 5000;
 const RECONNECT_MAX = 60000;
 const SPAWN_TIMEOUT = 45000;
 const WATCHDOG_INTERVAL = 15000;
-const MOVE_MIN = 1800;
-const MOVE_MAX = 3500;
-const PAUSE_MIN = 300;
-const PAUSE_MAX = 1000;
 
 function clearTimeoutSafe(t) { if (t) clearTimeout(t); return null; }
 function clearIntervalSafe(t) { if (t) clearInterval(t); return null; }
@@ -127,48 +123,36 @@ async function createBot() {
   }
 
   let lastEntityTime = Date.now();
-  let currentAction = 0;
 
   function lookAround() {
     if (!bot?.entity) return;
+    try { bot.look(bot.entity.yaw + (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 0.35, true); } catch (_) {}
+  }
+
+  const danceSteps = [
+    ['forward', 1200], ['left', 850], ['back', 1100], ['right', 850],
+    ['forward', 1000], ['right', 850], ['back', 1100], ['left', 850]
+  ];
+  let danceIndex = 0;
+
+  function danceStep() {
+    if (!bot?.entity || shuttingDown) return;
+    for (const state of ['forward','back','left','right']) {
+      try { bot.setControlState(state, false); } catch (_) {}
+    }
+    const [direction, duration] = danceSteps[danceIndex];
+    danceIndex = (danceIndex + 1) % danceSteps.length;
     try {
-      const yaw = bot.entity.yaw + (Math.random() - 0.5) * 1.8;
-      const pitch = Math.max(-0.45, Math.min(0.45, bot.entity.pitch + (Math.random() - 0.5) * 0.5));
-      bot.look(yaw, pitch, true);
-      console.log('👀 [DANCE] look');
-    } catch (_) {}
-  }
-
-  function doDanceStep(direction, duration) {
-    if (!bot?.entity) return;
-    stopMovement();
-    console.log(`💃 [DANCE] ${direction} ${duration}ms`);
-    bot.setControlState(direction, true);
-    if (chance(35)) bot.setControlState('jump', true);
-    movementTimer = setTimeout(() => {
-      stopMovement();
+      bot.setControlState(direction, true);
+      if (chance(35)) {
+        bot.setControlState('jump', true);
+        setTimeout(() => { try { bot.setControlState('jump', false); } catch (_) {} }, 220);
+      }
       lookAround();
-      scheduleNextDance(random(PAUSE_MIN, PAUSE_MAX));
-    }, duration);
-  }
-
-  function scheduleNextDance(delay = random(PAUSE_MIN, PAUSE_MAX)) {
-    movementTimer = clearTimeoutSafe(movementTimer);
-    movementTimer = setTimeout(() => {
-      if (!bot?.entity || shuttingDown) return;
-      const actions = [
-        () => doDanceStep('forward', random(MOVE_MIN, MOVE_MAX)),
-        () => doDanceStep('back', random(1200, 2600)),
-        () => doDanceStep('left', random(1000, 2300)),
-        () => doDanceStep('right', random(1000, 2300)),
-        () => { lookAround(); scheduleNextDance(random(400, 1200)); },
-        () => { lookAround(); if (chance(60)) bot.swingArm(); scheduleNextDance(random(500, 1400)); }
-      ];
-      let next;
-      do { next = random(0, actions.length - 1); } while (actions.length > 1 && next === currentAction);
-      currentAction = next;
-      actions[next]();
-    }, delay);
+      if (chance(35)) bot.swingArm();
+    } catch (_) {}
+    console.log(`💃 [DANCE] ${direction} ${duration}ms`);
+    movementTimer = setTimeout(danceStep, duration);
   }
 
   const armorSlots = {
@@ -214,10 +198,10 @@ async function createBot() {
     spawnTimer = clearTimeoutSafe(spawnTimer);
     console.log(`🎉 [SPAWN] SUCCESS — ${usernameForAttempt} joined ${config.serverHost}:${config.serverPort}`);
     if (bot.entity?.position) console.log(`📍 [POSITION] ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
-    console.log('💃 [DANCE] starting continuous dance in 1s');
-    lookAround();
+    console.log('💃 [DANCE] continuous dance started');
+    danceIndex = 0;
     movementTimer = clearTimeoutSafe(movementTimer);
-    movementTimer = setTimeout(() => doDanceStep('forward', 2200), 1000);
+    danceStep();
     armorTimer = setTimeout(equipArmor, 4000);
     armInterval = setInterval(() => { if (bot?.entity && chance(70)) lookAround(); }, 8000);
     chatInterval = setInterval(() => { if (bot?.entity) console.log(`💚 [ALIVE] ${Math.floor((Date.now() - startedAt) / 1000)}s | hp=${bot.health} | food=${bot.food}`); }, 5 * 60 * 1000);
