@@ -4,7 +4,7 @@
   "description": "Minecraft AFK Bot with web control panel",
   "main": "bot.js",
   "scripts": {
-    "start": "node web/server.js",
+    "start": "node bot.js",
     "bot": "node bot.js",
     "panel": "node web/server.js"
   },
