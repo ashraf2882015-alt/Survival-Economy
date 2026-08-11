@@ -10,8 +10,8 @@ on:
       - 'bot/**'
       - '.github/workflows/minecraft-bot.yml'
 
-# Only one bot session should exist at a time.
-# The current run triggers its replacement before the runner expires, then exits.
+# A replacement run intentionally cancels the old run after the new run is queued.
+# This avoids a growing queue while keeping only one bot session alive.
 concurrency:
   group: minecraft-bot
   cancel-in-progress: true
@@ -43,38 +43,56 @@ jobs:
       - name: Install Dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Run Bot With Auto-Recovery
+      - name: Run Bot With Recovery
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -u
 
-          npm start &
-          BOT_PID=$!
+          START_TIME=$(date +%s)
+          REFRESH_AFTER=19800
+          RESTART_DELAY=5
 
-          # Keep the runner busy while the bot is alive.
-          # Restart the workflow before the GitHub-hosted runner time limit.
-          MAX_SECONDS=20100
-          CHECK_INTERVAL=10
-          ELAPSED=0
+          start_bot() {
+            echo "🚀 Starting Minecraft bot..."
+            npm start &
+            BOT_PID=$!
+            echo "Bot PID: $BOT_PID"
+          }
 
-          while kill -0 "$BOT_PID" 2>/dev/null; do
-            if [ "$ELAPSED" -ge "$MAX_SECONDS" ]; then
-              echo "Runner refresh time reached. Starting the next workflow..."
+          start_bot
 
-              gh workflow run minecraft-bot.yml \
-                --repo "$GITHUB_REPOSITORY" \
-                --ref "$GITHUB_REF_NAME"
+          while true; do
+            NOW=$(date +%s)
+            ELAPSED=$((NOW - START_TIME))
 
-              echo "Next workflow requested successfully. Stopping current bot session."
-              kill "$BOT_PID" 2>/dev/null || true
+            # If the bot process exits unexpectedly, restart it in the same runner.
+            if ! kill -0 "$BOT_PID" 2>/dev/null; then
+              echo "⚠️ Bot process stopped. Restarting in ${RESTART_DELAY}s..."
               wait "$BOT_PID" 2>/dev/null || true
-              exit 0
+              sleep "$RESTART_DELAY"
+              start_bot
+              continue
             fi
 
-            sleep "$CHECK_INTERVAL"
-            ELAPSED=$((ELAPSED + CHECK_INTERVAL))
-          done
+            # Start a replacement workflow before the runner's hard time limit.
+            # The new run cancels this run because of the concurrency policy above.
+            if [ "$ELAPSED" -ge "$REFRESH_AFTER" ]; then
+              echo "♻️ Refreshing GitHub runner..."
 
-          wait "$BOT_PID"
+              if gh workflow run minecraft-bot.yml \
+                --repo "$GITHUB_REPOSITORY" \
+                --ref "$GITHUB_REF_NAME"; then
+                echo "✅ Replacement workflow queued. Shutting down this bot session."
+                kill "$BOT_PID" 2>/dev/null || true
+                wait "$BOT_PID" 2>/dev/null || true
+                exit 0
+              else
+                echo "⚠️ Could not queue replacement workflow; keeping current bot alive."
+                sleep 30
+              fi
+            fi
+
+            sleep 10
+          done
