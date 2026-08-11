@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Survival Economy • Bot Control</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:#0b1020;color:#eef2ff;min-height:100vh}main{max-width:1000px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:22px}.title{font-size:28px;font-weight:800}.sub{color:#9aa7c2;margin-top:4px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{background:#121a2d;border:1px solid #25304a;border-radius:18px;padding:20px;box-shadow:0 12px 35px #0003}.status{display:flex;align-items:center;gap:10px}.dot{width:11px;height:11px;border-radius:50%;background:#64748b}.dot.on{background:#22c55e;box-shadow:0 0 14px #22c55e}.dot.busy{background:#f59e0b}.label{color:#9aa7c2;font-size:13px}.value{font-size:18px;font-weight:700;margin-top:4px}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}button{border:0;border-radius:12px;padding:12px 14px;font-weight:700;cursor:pointer;background:#263552;color:#fff}button:hover{filter:brightness(1.15)}button.danger{background:#7f1d1d}button.primary{background:#166534}.row{display:flex;gap:10px}.row input{flex:1}input{width:100%;padding:12px;border-radius:12px;border:1px solid #33415f;background:#0d1425;color:#fff;outline:none}.mono{font-family:ui-monospace,SFMono-Regular,monospace}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:15px}.stat{background:#0d1425;padding:12px;border-radius:12px}.small{font-size:12px;color:#8390aa;margin-top:12px}#msg{min-height:22px;color:#93c5fd;margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div><div class="title">🤖 Survival Economy</div><div class="sub">Minecraft Bot Control Panel</div></div>
+    <div class="status"><span id="dot" class="dot"></span><b id="state">OFFLINE</b></div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Bot</h2>
+      <div class="label">Username</div><div id="username" class="value mono">—</div>
+      <div class="label" style="margin-top:12px">Server</div><div id="server" class="value mono">—</div>
+      <div class="stats">
+        <div class="stat"><div class="label">Health</div><div id="health" class="value">—</div></div>
+        <div class="stat"><div class="label">Food</div><div id="food" class="value">—</div></div>
+        <div class="stat"><div class="label">Position</div><div id="pos" class="value mono" style="font-size:14px">—</div></div>
+        <div class="stat"><div class="label">Connection</div><div id="conn" class="value">—</div></div>
+      </div>
+      <div class="buttons">
+        <button class="primary" onclick="action('start')">▶ Start</button>
+        <button class="danger" onclick="action('stop')">■ Stop</button>
+        <button onclick="action('reconnect')">↻ Reconnect</button>
+        <button onclick="refresh()">⟳ Refresh</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Chat</h2>
+      <div class="row"><input id="chat" maxlength="500" placeholder="Write a Minecraft message…"><button onclick="sendChat()">Send</button></div>
+      <div id="msg"></div>
+      <div class="small">The panel talks to the bot process through the local web API.</div>
+    </section>
+  </div>
+</main>
+<script>
+async function api(path,options={}){const r=await fetch(path,options);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Request failed');return d}
+async function refresh(){try{const s=await api('/api/status');document.getElementById('username').textContent=s.username||'—';document.getElementById('server').textContent=s.server||'—';document.getElementById('health').textContent=s.health==null?'—':Number(s.health).toFixed(1);document.getElementById('food').textContent=s.food==null?'—':s.food;document.getElementById('pos').textContent=s.position?`${s.position.x}, ${s.position.y}, ${s.position.z}`:'—';document.getElementById('conn').textContent=s.online?'ONLINE':s.connecting?'CONNECTING':'OFFLINE';document.getElementById('state').textContent=s.online?'ONLINE':s.connecting?'CONNECTING':'OFFLINE';document.getElementById('dot').className='dot '+(s.online?'on':s.connecting?'busy':'')}catch(e){document.getElementById('msg').textContent=e.message}}
+async function action(name){try{await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:name})});document.getElementById('msg').textContent=`${name} sent`;setTimeout(refresh,300)}catch(e){document.getElementById('msg').textContent=e.message}}
+async function sendChat(){const el=document.getElementById('chat');const message=el.value.trim();if(!message)return;try{await api('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'chat',message})});el.value='';document.getElementById('msg').textContent='Message sent'}catch(e){document.getElementById('msg').textContent=e.message}}
+document.getElementById('chat').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat()});refresh();setInterval(refresh,3000);
+</script>
+</body>
+</html>
