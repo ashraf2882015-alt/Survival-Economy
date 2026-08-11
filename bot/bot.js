@@ -23,10 +23,10 @@ const RECONNECT_MIN = 5000;
 const RECONNECT_MAX = 60000;
 const SPAWN_TIMEOUT = 45000;
 const WATCHDOG_INTERVAL = 15000;
-const MOVE_MIN = 3500;
-const MOVE_MAX = 9000;
-const PAUSE_MIN = 2500;
-const PAUSE_MAX = 7000;
+const MOVE_MIN = 1800;
+const MOVE_MAX = 3500;
+const PAUSE_MIN = 300;
+const PAUSE_MAX = 1000;
 
 function clearTimeoutSafe(t) { if (t) clearTimeout(t); return null; }
 function clearIntervalSafe(t) { if (t) clearInterval(t); return null; }
@@ -117,14 +117,7 @@ async function createBot() {
   }
 
   try {
-    bot = mineflayer.createBot({
-      host: config.serverHost,
-      port: config.serverPort,
-      username: usernameForAttempt,
-      auth: 'offline',
-      version: config.version || false,
-      viewDistance: config.botChunk
-    });
+    bot = mineflayer.createBot({ host: config.serverHost, port: config.serverPort, username: usernameForAttempt, auth: 'offline', version: config.version || false, viewDistance: config.botChunk });
     console.log(`🚀 [MINEFLAYER] Connection started as ${usernameForAttempt}; waiting for login/spawn...`);
   } catch (err) {
     bot = null;
@@ -142,34 +135,34 @@ async function createBot() {
       const yaw = bot.entity.yaw + (Math.random() - 0.5) * 1.8;
       const pitch = Math.max(-0.45, Math.min(0.45, bot.entity.pitch + (Math.random() - 0.5) * 0.5));
       bot.look(yaw, pitch, true);
-      console.log('👀 [MOVE TEST] look');
+      console.log('👀 [DANCE] look');
     } catch (_) {}
   }
 
-  function doShortWalk(direction, duration) {
+  function doDanceStep(direction, duration) {
     if (!bot?.entity) return;
     stopMovement();
-    console.log(`🚶 [MOVE TEST] ${direction} for ${duration}ms`);
+    console.log(`💃 [DANCE] ${direction} ${duration}ms`);
     bot.setControlState(direction, true);
+    if (chance(35)) bot.setControlState('jump', true);
     movementTimer = setTimeout(() => {
       stopMovement();
-      console.log(`🛑 [MOVE TEST] stop (${direction})`);
       lookAround();
-      scheduleNextMovement(random(PAUSE_MIN, PAUSE_MAX));
+      scheduleNextDance(random(PAUSE_MIN, PAUSE_MAX));
     }, duration);
   }
 
-  function scheduleNextMovement(delay = random(PAUSE_MIN, PAUSE_MAX)) {
+  function scheduleNextDance(delay = random(PAUSE_MIN, PAUSE_MAX)) {
     movementTimer = clearTimeoutSafe(movementTimer);
     movementTimer = setTimeout(() => {
       if (!bot?.entity || shuttingDown) return;
       const actions = [
-        () => doShortWalk('forward', random(MOVE_MIN, MOVE_MAX)),
-        () => doShortWalk('back', random(2500, 6000)),
-        () => doShortWalk('left', random(2200, 5000)),
-        () => doShortWalk('right', random(2200, 5000)),
-        () => { lookAround(); scheduleNextMovement(random(3000, 6500)); },
-        () => { lookAround(); if (chance(45)) { console.log('🖐️ [MOVE TEST] swingArm'); bot.swingArm(); } scheduleNextMovement(random(3500, 7500)); }
+        () => doDanceStep('forward', random(MOVE_MIN, MOVE_MAX)),
+        () => doDanceStep('back', random(1200, 2600)),
+        () => doDanceStep('left', random(1000, 2300)),
+        () => doDanceStep('right', random(1000, 2300)),
+        () => { lookAround(); scheduleNextDance(random(400, 1200)); },
+        () => { lookAround(); if (chance(60)) bot.swingArm(); scheduleNextDance(random(500, 1400)); }
       ];
       let next;
       do { next = random(0, actions.length - 1); } while (actions.length > 1 && next === currentAction);
@@ -178,15 +171,12 @@ async function createBot() {
     }, delay);
   }
 
-  function occasionalLook() { if (bot?.entity && chance(70)) lookAround(); }
-
   const armorSlots = {
     head: ['netherite_helmet','diamond_helmet','iron_helmet','golden_helmet','chainmail_helmet','leather_helmet'],
     torso: ['netherite_chestplate','diamond_chestplate','iron_chestplate','golden_chestplate','chainmail_chestplate','leather_chestplate'],
     legs: ['netherite_leggings','diamond_leggings','iron_leggings','golden_leggings','chainmail_leggings','leather_leggings'],
     feet: ['netherite_boots','diamond_boots','iron_boots','golden_boots','chainmail_boots','leather_boots']
   };
-
   let armorBusy = false;
   async function equipArmor() {
     if (!bot?.entity || armorBusy) return;
@@ -224,39 +214,24 @@ async function createBot() {
     spawnTimer = clearTimeoutSafe(spawnTimer);
     console.log(`🎉 [SPAWN] SUCCESS — ${usernameForAttempt} joined ${config.serverHost}:${config.serverPort}`);
     if (bot.entity?.position) console.log(`📍 [POSITION] ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
-    console.log('🧪 [MOVE TEST] starting movement test in 1s');
+    console.log('💃 [DANCE] starting continuous dance in 1s');
     lookAround();
     movementTimer = clearTimeoutSafe(movementTimer);
-    movementTimer = setTimeout(() => doShortWalk('forward', 4000), 1000);
+    movementTimer = setTimeout(() => doDanceStep('forward', 2200), 1000);
     armorTimer = setTimeout(equipArmor, 4000);
-    armInterval = setInterval(occasionalLook, 25000);
-    chatInterval = setInterval(() => {
-      if (bot?.entity) console.log(`💚 [ALIVE] ${Math.floor((Date.now() - startedAt) / 1000)}s | hp=${bot.health} | food=${bot.food}`);
-    }, 5 * 60 * 1000);
+    armInterval = setInterval(() => { if (bot?.entity && chance(70)) lookAround(); }, 8000);
+    chatInterval = setInterval(() => { if (bot?.entity) console.log(`💚 [ALIVE] ${Math.floor((Date.now() - startedAt) / 1000)}s | hp=${bot.health} | food=${bot.food}`); }, 5 * 60 * 1000);
     watchdogTimer = setInterval(watchdog, WATCHDOG_INTERVAL);
   });
 
   bot.on('move', () => { if (bot?.entity) lastEntityTime = Date.now(); });
   bot.on('game', game => console.log(`🎮 [GAME] ${game?.dimension || 'unknown dimension'}`));
   bot.on('health', () => console.log(`❤️ [HEALTH] ${bot.health} | food=${bot.food}`));
-  bot.on('kicked', reason => {
-    console.log(`🚫 [KICKED] ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`);
-    changeNameAfterKick();
-  });
+  bot.on('kicked', reason => { console.log(`🚫 [KICKED] ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`); changeNameAfterKick(); });
   bot.on('error', err => console.log(`❌ [ERROR] ${err.code || 'NO_CODE'}: ${err.message}`));
-  bot.on('end', reason => {
-    const endedBot = bot;
-    bot = null;
-    console.log(`⛔ [END] ${reason || 'connection closed'} | next username=${nextBotUsername}`);
-    if (!shuttingDown && endedBot) scheduleReconnect(reason || 'connection ended');
-  });
+  bot.on('end', reason => { const endedBot = bot; bot = null; console.log(`⛔ [END] ${reason || 'connection closed'} | next username=${nextBotUsername}`); if (!shuttingDown && endedBot) scheduleReconnect(reason || 'connection ended'); });
   bot.on('chat', (username, message) => { if (username !== usernameForAttempt) console.log(`💬 [CHAT IN] ${username}: ${message}`); });
-  bot.on('playerCollect', collector => {
-    if (collector.username === usernameForAttempt) {
-      armorTimer = clearTimeoutSafe(armorTimer);
-      armorTimer = setTimeout(equipArmor, 1000);
-    }
-  });
+  bot.on('playerCollect', collector => { if (collector.username === usernameForAttempt) { armorTimer = clearTimeoutSafe(armorTimer); armorTimer = setTimeout(equipArmor, 1000); } });
 
   spawnTimer = setTimeout(() => {
     if (!bot?.entity && !shuttingDown) {
@@ -267,46 +242,11 @@ async function createBot() {
   }, SPAWN_TIMEOUT);
 }
 
-function start() {
-  if (bot?.entity || bot) return;
-  shuttingDown = false;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  createBot();
-}
-
-function stop(reason = 'manual stop') {
-  shuttingDown = true;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  cleanupTimers();
-  startedAt = null;
-  try { bot?.quit(reason); } catch (_) {}
-  bot = null;
-  console.log(`🛑 [STOP] ${reason}`);
-}
-
-function reconnect(reason = 'manual reconnect') {
-  shuttingDown = false;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  cleanupTimers();
-  try { bot?.quit(`Reconnect: ${reason}`); } catch (_) {}
-  bot = null;
-  console.log(`🔁 [MANUAL RECONNECT] ${reason} | username=${nextBotUsername}`);
-  setTimeout(() => { if (!shuttingDown) createBot(); }, RECONNECT_MIN);
-}
-
-function chat(message) {
-  if (!bot?.entity) throw new Error('Bot is offline');
-  bot.chat(String(message));
-}
-
-function shutdown(signal) {
-  stop(signal);
-  setTimeout(() => process.exit(0), 1000).unref();
-}
-
+function start() { if (bot?.entity || bot) return; shuttingDown = false; if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null; createBot(); }
+function stop(reason = 'manual stop') { shuttingDown = true; if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null; cleanupTimers(); startedAt = null; try { bot?.quit(reason); } catch (_) {} bot = null; console.log(`🛑 [STOP] ${reason}`); }
+function reconnect(reason = 'manual reconnect') { shuttingDown = false; if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null; cleanupTimers(); try { bot?.quit(`Reconnect: ${reason}`); } catch (_) {} bot = null; console.log(`🔁 [MANUAL RECONNECT] ${reason} | username=${nextBotUsername}`); setTimeout(() => { if (!shuttingDown) createBot(); }, RECONNECT_MIN); }
+function chat(message) { if (!bot?.entity) throw new Error('Bot is offline'); bot.chat(String(message)); }
+function shutdown(signal) { stop(signal); setTimeout(() => process.exit(0), 1000).unref(); }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
@@ -315,9 +255,8 @@ console.log(`🤖 Survival Economy Bot | ${new Date().toISOString()}`);
 console.log(`🎯 ${config.serverHost}:${config.serverPort} | 👤 ${nextBotUsername}`);
 console.log('♾️ Continuous retry: ENABLED');
 console.log('🧍 Natural movement: ENABLED');
-console.log('🧪 Movement test: ENABLED');
+console.log('💃 Dance movement: ENABLED');
 console.log('🔄 Kick → rename → reconnect: ENABLED');
 console.log('============================================================');
 start();
-
 module.exports = { getBot: () => bot, getConfig: () => config, getStartedAt: () => startedAt, start, stop, reconnect, chat };
