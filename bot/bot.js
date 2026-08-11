@@ -15,6 +15,7 @@ let movementTimer = null;
 let armInterval = null;
 let chatInterval = null;
 let armorTimer = null;
+let kickRenameCount = 0;
 
 const RECONNECT_MIN = 5000;
 const RECONNECT_MAX = 60000;
@@ -31,6 +32,14 @@ function clearTimeoutSafe(t) { if (t) clearTimeout(t); return null; }
 function clearIntervalSafe(t) { if (t) clearInterval(t); return null; }
 function random(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
 function chance(percent) { return Math.random() * 100 < percent; }
+
+// Change the Minecraft username after every kick.
+// The generated names stay within Minecraft's 16-character username limit.
+function changeNameAfterKick() {
+  kickRenameCount += 1;
+  config.botUsername = `SurvivalBot${String(kickRenameCount).padStart(3, '0')}`;
+  console.log(`🔄 [RENAME] Kick #${kickRenameCount} → next username: ${config.botUsername}`);
+}
 
 function stopMovement() {
   if (!bot) return;
@@ -111,7 +120,7 @@ async function createBot() {
       version: config.version || false,
       viewDistance: config.botChunk
     });
-    console.log('🚀 [MINEFLAYER] Connection started; waiting for login/spawn...');
+    console.log(`🚀 [MINEFLAYER] Connection started as ${config.botUsername}; waiting for login/spawn...`);
   } catch (err) {
     console.log(`❌ [CREATE] ${err.code || 'ERROR'}: ${err.message}`);
     scheduleReconnect('createBot error');
@@ -121,8 +130,6 @@ async function createBot() {
   let lastEntityTime = Date.now();
   let currentAction = 0;
 
-  // Natural-looking idle/movement cycle. It does not run constantly:
-  // the bot walks for a while, stops, looks around, then chooses another action.
   function lookAround() {
     if (!bot?.entity) return;
     try {
@@ -166,7 +173,6 @@ async function createBot() {
         }
       ];
 
-      // Avoid repeating the exact same action twice in a row.
       let next;
       do { next = random(0, actions.length - 1); } while (actions.length > 1 && next === currentAction);
       currentAction = next;
@@ -216,7 +222,7 @@ async function createBot() {
     }
   }
 
-  bot.once('login', () => console.log('🔐 [LOGIN] Login accepted by server.'));
+  bot.once('login', () => console.log(`🔐 [LOGIN] Login accepted by server as ${config.botUsername}.`));
   bot.once('spawn', () => {
     reconnectAttempt = 0;
     startedAt = Date.now();
@@ -225,13 +231,11 @@ async function createBot() {
     console.log(`🎉 [SPAWN] SUCCESS — ${config.botUsername} joined ${config.serverHost}:${config.serverPort}`);
     if (bot.entity?.position) console.log(`📍 [POSITION] ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
 
-    // Start with a short natural pause instead of instantly moving.
     lookAround();
     scheduleNextMovement(random(3000, 7000));
     armorTimer = setTimeout(equipArmor, 4000);
     armInterval = setInterval(occasionalLook, 25000);
     chatInterval = setInterval(() => {
-      // No automatic chat spam; only a harmless status log.
       if (bot?.entity) console.log(`💚 [ALIVE] ${Math.floor((Date.now() - startedAt) / 1000)}s | hp=${bot.health} | food=${bot.food}`);
     }, 5 * 60 * 1000);
     watchdogTimer = setInterval(watchdog, 15000);
@@ -240,9 +244,13 @@ async function createBot() {
   bot.on('move', () => { if (bot?.entity) lastEntityTime = Date.now(); });
   bot.on('game', game => console.log(`🎮 [GAME] ${game?.dimension || 'unknown dimension'}`));
   bot.on('health', () => console.log(`❤️ [HEALTH] ${bot.health} | food=${bot.food}`));
-  bot.on('kicked', reason => console.log(`🚫 [KICKED] ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`));
+  bot.on('kicked', reason => {
+    console.log(`🚫 [KICKED] ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`);
+    // The next reconnect uses a new username.
+    changeNameAfterKick();
+  });
   bot.on('error', err => console.log(`❌ [ERROR] ${err.code || 'NO_CODE'}: ${err.message}`));
-  bot.on('end', reason => { console.log(`⛔ [END] ${reason || 'connection closed'}`); if (!shuttingDown) scheduleReconnect(reason || 'connection ended'); });
+  bot.on('end', reason => { console.log(`⛔ [END] ${reason || 'connection closed'} | next username=${config.botUsername}`); if (!shuttingDown) scheduleReconnect(reason || 'connection ended'); });
   bot.on('chat', (username, message) => { if (username !== config.botUsername) console.log(`💬 [CHAT IN] ${username}: ${message}`); });
   bot.on('playerCollect', collector => { if (collector.username === config.botUsername) { armorTimer = clearTimeoutSafe(armorTimer); armorTimer = setTimeout(equipArmor, 1000); } });
 
@@ -268,6 +276,7 @@ console.log(`🤖 Survival Economy Bot | ${new Date().toISOString()}`);
 console.log(`🎯 ${config.serverHost}:${config.serverPort} | 👤 ${config.botUsername}`);
 console.log('♾️ Continuous retry: ENABLED');
 console.log('🧍 Natural movement: ENABLED');
+console.log('🔄 Rename after kick: ENABLED');
 console.log('============================================================');
 start();
 
