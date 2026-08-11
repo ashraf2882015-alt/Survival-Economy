@@ -9,16 +9,15 @@ on:
     paths:
       - 'bot/**'
       - '.github/workflows/minecraft-bot.yml'
-  schedule:
-    - cron: '0 */4 * * *'
 
-# Never allow a scheduled/manual run to kill a healthy bot session.
-# A new scheduled run will wait for the current one to finish.
+# Only one bot session should exist at a time.
+# The current run triggers its replacement before the runner expires, then exits.
 concurrency:
   group: minecraft-bot
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
+  actions: write
   contents: read
 
 jobs:
@@ -44,5 +43,38 @@ jobs:
       - name: Install Dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Run Minecraft Bot
-        run: npm start
+      - name: Run Bot With Auto-Recovery
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+
+          npm start &
+          BOT_PID=$!
+
+          # Keep the runner busy while the bot is alive.
+          # Restart the workflow before the GitHub-hosted runner time limit.
+          MAX_SECONDS=20100
+          CHECK_INTERVAL=10
+          ELAPSED=0
+
+          while kill -0 "$BOT_PID" 2>/dev/null; do
+            if [ "$ELAPSED" -ge "$MAX_SECONDS" ]; then
+              echo "Runner refresh time reached. Starting the next workflow..."
+
+              gh workflow run minecraft-bot.yml \
+                --repo "$GITHUB_REPOSITORY" \
+                --ref "$GITHUB_REF_NAME"
+
+              echo "Next workflow requested successfully. Stopping current bot session."
+              kill "$BOT_PID" 2>/dev/null || true
+              wait "$BOT_PID" 2>/dev/null || true
+              exit 0
+            fi
+
+            sleep "$CHECK_INTERVAL"
+            ELAPSED=$((ELAPSED + CHECK_INTERVAL))
+          done
+
+          wait "$BOT_PID"
