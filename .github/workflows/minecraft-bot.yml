@@ -7,8 +7,9 @@ on:
       - 'bot/**'
       - '.github/workflows/minecraft-bot.yml'
   schedule:
-    # Start a fresh runner every 6 hours. GitHub Actions is not a guaranteed 24/7 host.
-    - cron: '0 */6 * * *'
+    # Refresh the runner before the GitHub-hosted job reaches its time limit.
+    # This reduces downtime but cannot guarantee uninterrupted 24/7 hosting.
+    - cron: '*/10 * * * *'
 
 concurrency:
   group: minecraft-bot
@@ -20,7 +21,7 @@ permissions:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: bot
