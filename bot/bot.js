@@ -142,16 +142,18 @@ async function createBot() {
       const yaw = bot.entity.yaw + (Math.random() - 0.5) * 1.8;
       const pitch = Math.max(-0.45, Math.min(0.45, bot.entity.pitch + (Math.random() - 0.5) * 0.5));
       bot.look(yaw, pitch, true);
+      console.log('👀 [MOVE TEST] look');
     } catch (_) {}
   }
 
   function doShortWalk(direction, duration) {
     if (!bot?.entity) return;
     stopMovement();
+    console.log(`🚶 [MOVE TEST] ${direction} for ${duration}ms`);
     bot.setControlState(direction, true);
-    if (chance(18)) bot.setControlState('sprint', true);
     movementTimer = setTimeout(() => {
       stopMovement();
+      console.log(`🛑 [MOVE TEST] stop (${direction})`);
       lookAround();
       scheduleNextMovement(random(PAUSE_MIN, PAUSE_MAX));
     }, duration);
@@ -167,7 +169,7 @@ async function createBot() {
         () => doShortWalk('left', random(2200, 5000)),
         () => doShortWalk('right', random(2200, 5000)),
         () => { lookAround(); scheduleNextMovement(random(3000, 6500)); },
-        () => { lookAround(); if (chance(45)) bot.swingArm(); scheduleNextMovement(random(3500, 7500)); }
+        () => { lookAround(); if (chance(45)) { console.log('🖐️ [MOVE TEST] swingArm'); bot.swingArm(); } scheduleNextMovement(random(3500, 7500)); }
       ];
       let next;
       do { next = random(0, actions.length - 1); } while (actions.length > 1 && next === currentAction);
@@ -222,8 +224,10 @@ async function createBot() {
     spawnTimer = clearTimeoutSafe(spawnTimer);
     console.log(`🎉 [SPAWN] SUCCESS — ${usernameForAttempt} joined ${config.serverHost}:${config.serverPort}`);
     if (bot.entity?.position) console.log(`📍 [POSITION] ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
+    console.log('🧪 [MOVE TEST] starting movement test in 1s');
     lookAround();
-    scheduleNextMovement(random(3000, 7000));
+    movementTimer = clearTimeoutSafe(movementTimer);
+    movementTimer = setTimeout(() => doShortWalk('forward', 4000), 1000);
     armorTimer = setTimeout(equipArmor, 4000);
     armInterval = setInterval(occasionalLook, 25000);
     chatInterval = setInterval(() => {
@@ -311,6 +315,7 @@ console.log(`🤖 Survival Economy Bot | ${new Date().toISOString()}`);
 console.log(`🎯 ${config.serverHost}:${config.serverPort} | 👤 ${nextBotUsername}`);
 console.log('♾️ Continuous retry: ENABLED');
 console.log('🧍 Natural movement: ENABLED');
+console.log('🧪 Movement test: ENABLED');
 console.log('🔄 Kick → rename → reconnect: ENABLED');
 console.log('============================================================');
 start();
