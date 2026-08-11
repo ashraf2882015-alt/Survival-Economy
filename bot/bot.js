@@ -2,6 +2,7 @@ const mineflayer = require('mineflayer');
 const config = require('./config.json');
 
 let bot;
+let reconnectTimer = null;
 
 function createBot() {
   bot = mineflayer.createBot({
@@ -13,10 +14,14 @@ function createBot() {
     viewDistance: config.botChunk
   });
 
-  // ===== Anti-AFK Movement =====
   let movementPhase = 0;
   const STEP_INTERVAL = 1200;
   const JUMP_DURATION = 400;
+  let movementTimer = null;
+  let armInterval = null;
+  let chatInterval = null;
+  let rightClickInterval = null;
+  let reconnectScheduled = false;
 
   const movements = [
     () => { bot.setControlState('forward', true);  bot.setControlState('back', false);  bot.setControlState('left', false);  bot.setControlState('right', false); },
@@ -24,55 +29,60 @@ function createBot() {
     () => { bot.setControlState('forward', false); bot.setControlState('back', false);  bot.setControlState('left', true);   bot.setControlState('right', false); },
     () => { bot.setControlState('forward', false); bot.setControlState('back', false);  bot.setControlState('left', false);  bot.setControlState('right', true);  },
     () => {
-      bot.setControlState('forward', false); bot.setControlState('back', false);
-      bot.setControlState('left', false);    bot.setControlState('right', false);
+      stopAll();
       bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), JUMP_DURATION);
+      setTimeout(() => {
+        if (bot?.entity) bot.setControlState('jump', false);
+      }, JUMP_DURATION);
     },
     () => {
       bot.setControlState('forward', true);
       bot.setControlState('jump', true);
-      setTimeout(() => { bot.setControlState('jump', false); bot.setControlState('forward', false); }, JUMP_DURATION);
+      setTimeout(() => {
+        if (bot?.entity) {
+          bot.setControlState('jump', false);
+          bot.setControlState('forward', false);
+        }
+      }, JUMP_DURATION);
     },
     () => {
-      // تدوير النظر في اتجاه عشوائي
       const yaw = Math.random() * Math.PI * 2;
       const pitch = (Math.random() - 0.5) * Math.PI * 0.5;
-      bot.look(yaw, pitch, true);
+      bot.look(yaw, pitch, true).catch?.(() => {});
     },
     () => {
       bot.setControlState('sneak', true);
-      setTimeout(() => bot.setControlState('sneak', false), 800);
+      setTimeout(() => {
+        if (bot?.entity) bot.setControlState('sneak', false);
+      }, 800);
     },
   ];
 
   function stopAll() {
-    ['forward','back','left','right','jump','sneak','sprint'].forEach(s => bot.setControlState(s, false));
+    if (!bot) return;
+    ['forward', 'back', 'left', 'right', 'jump', 'sneak', 'sprint'].forEach(state => {
+      try { bot.setControlState(state, false); } catch (_) {}
+    });
   }
 
   function randomInterval(base) {
-    // فترة عشوائية بين 80% و120% من الأساس لتجنب كشف الأنماط
     return base * (0.8 + Math.random() * 0.4);
   }
 
   function swingArm() {
-    if (!bot.entity) return;
-    bot.swingArm();
+    if (!bot?.entity) return;
+    try { bot.swingArm(); } catch (_) {}
   }
 
   function movementCycle() {
-    if (!bot.entity) return;
+    if (!bot?.entity) return;
     stopAll();
     movements[movementPhase]();
-    swingArm(); // تأرجح اليد مع كل حركة
+    swingArm();
     movementPhase = (movementPhase + 1) % movements.length;
-    setTimeout(movementCycle, randomInterval(STEP_INTERVAL));
+    movementTimer = setTimeout(movementCycle, randomInterval(STEP_INTERVAL));
   }
 
-  // تأرجح اليد كل 30 ثانية بشكل مستقل
-  let armInterval = null;
-
-  // ===== Chat Message Every Hour =====
   const chatMessages = [
     'AFK Bot is active!',
     'Still here, keeping the server alive!',
@@ -82,90 +92,94 @@ function createBot() {
   let chatIndex = 0;
 
   function sendHourlyChat() {
-    if (!bot.entity) return;
+    if (!bot?.entity) return;
     const msg = chatMessages[chatIndex % chatMessages.length];
-    bot.chat(msg);
-    console.log(`💬 Bot said: "${msg}"`);
-    chatIndex++;
+    try {
+      bot.chat(msg);
+      console.log(`💬 Bot said: "${msg}"`);
+      chatIndex++;
+    } catch (_) {}
   }
 
-  let chatInterval = null;
-
-  // ===== كليك يمين 3 مرات على أي حاجة في الـ inventory =====
-  const armorNames = [
-    'helmet','chestplate','leggings','boots' // استثناء الدروع
-  ];
-
   async function rightClickInventoryItem() {
-    if (!bot.entity) return;
-
-    // اختار أي أيتم في الـ inventory
+    if (!bot?.entity) return;
     const item = bot.inventory.items()[0];
-
     if (!item) return;
 
     try {
-      // امسك الأيتم في إيدك
       await bot.equip(item, 'hand');
-
-      // كليك يمين 3 مرات
       for (let i = 0; i < 3; i++) {
         bot.activateItem();
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(resolve => setTimeout(resolve, 300));
         bot.deactivateItem();
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
       console.log(`🖱️ Right-clicked "${item.name}" 3 times`);
-    } catch (e) { /* item changed or error */ }
+    } catch (_) {}
   }
 
-  // ===== لبس الدروع تلقائياً =====
   const armorSlots = {
-    head:  ['netherite_helmet',     'diamond_helmet',     'iron_helmet',     'golden_helmet',     'chainmail_helmet',     'leather_helmet'],
-    torso: ['netherite_chestplate', 'diamond_chestplate', 'iron_chestplate', 'golden_chestplate', 'chainmail_chestplate', 'leather_chestplate'],
-    legs:  ['netherite_leggings',   'diamond_leggings',   'iron_leggings',   'golden_leggings',   'chainmail_leggings',   'leather_leggings'],
-    feet:  ['netherite_boots',      'diamond_boots',      'iron_boots',      'golden_boots',      'chainmail_boots',      'leather_boots'],
+    head: ['netherite_helmet','diamond_helmet','iron_helmet','golden_helmet','chainmail_helmet','leather_helmet'],
+    torso: ['netherite_chestplate','diamond_chestplate','iron_chestplate','golden_chestplate','chainmail_chestplate','leather_chestplate'],
+    legs: ['netherite_leggings','diamond_leggings','iron_leggings','golden_leggings','chainmail_leggings','leather_leggings'],
+    feet: ['netherite_boots','diamond_boots','iron_boots','golden_boots','chainmail_boots','leather_boots'],
   };
 
   async function equipArmor() {
+    if (!bot?.entity) return;
     for (const [slot, items] of Object.entries(armorSlots)) {
       for (const itemName of items) {
         const item = bot.inventory.items().find(i => i.name === itemName);
-        if (item) {
-          try {
-            await bot.equip(item, slot);
-            console.log(`🛡️ Equipped ${itemName} on ${slot}`);
-          } catch (e) { /* already equipped or error */ }
-          break;
-        }
+        if (!item) continue;
+        try {
+          await bot.equip(item, slot);
+          console.log(`🛡️ Equipped ${itemName} on ${slot}`);
+        } catch (_) {}
+        break;
       }
     }
   }
 
-  // ===== Events =====
+  function cleanup() {
+    stopAll();
+    if (movementTimer) clearTimeout(movementTimer);
+    if (armInterval) clearInterval(armInterval);
+    if (chatInterval) clearInterval(chatInterval);
+    if (rightClickInterval) clearInterval(rightClickInterval);
+    movementTimer = null;
+    armInterval = null;
+    chatInterval = null;
+    rightClickInterval = null;
+  }
+
+  function scheduleReconnect() {
+    if (reconnectScheduled) return;
+    reconnectScheduled = true;
+    console.log('🔄 Reconnecting in 5 seconds...');
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      reconnectScheduled = false;
+      createBot();
+    }, 5000);
+  }
+
   bot.on('spawn', () => {
+    console.log(`🌐 Connected to ${config.serverHost}:${config.serverPort}`);
+
     setTimeout(() => {
+      if (!bot?.entity) return;
       bot.setControlState('sneak', true);
-      console.log(`✅ ${config.botUsername} is Ready! Connected to ${config.serverHost}:${config.serverPort}`);
+      console.log(`✅ ${config.botUsername} is Ready!`);
     }, 3000);
 
-    setTimeout(movementCycle, STEP_INTERVAL);
-
-    // لبس الدروع عند الاتصال
+    movementTimer = setTimeout(movementCycle, STEP_INTERVAL);
     setTimeout(equipArmor, 4000);
-
-    // كليك يمين كل دقيقتين
-    setInterval(rightClickInventoryItem, 2 * 60 * 1000);
-
-    // رسالة شات كل ساعة
+    rightClickInterval = setInterval(rightClickInventoryItem, 2 * 60 * 1000);
     chatInterval = setInterval(sendHourlyChat, 60 * 60 * 1000);
-
-    // تأرجح اليد كل 30 ثانية بشكل مستقل
-    armInterval = setInterval(swingArm, randomInterval(30000));
+    armInterval = setInterval(swingArm, 30000);
   });
 
-  // لبس الدروع تلقائياً لما تتغير الـ inventory
-  bot.on('playerCollect', (collector) => {
+  bot.on('playerCollect', collector => {
     if (collector.username === config.botUsername) {
       setTimeout(equipArmor, 1000);
     }
@@ -176,20 +190,35 @@ function createBot() {
     console.log(`💬 [${username}]: ${message}`);
   });
 
-  bot.on('error', (err) => {
+  bot.on('error', err => {
     console.error('⚠️ Error:', err.message);
   });
 
-  bot.on('end', (reason) => {
-    if (chatInterval) { clearInterval(chatInterval); chatInterval = null; }
-    if (armInterval) { clearInterval(armInterval); armInterval = null; }
-    console.log(`⛔ Bot Disconnected (${reason}). Reconnecting in 5s...`);
-    setTimeout(createBot, 5000);
-  });
-
-  bot.on('kicked', (reason) => {
+  bot.on('kicked', reason => {
     console.log(`🚫 Bot was kicked: ${reason}`);
   });
+
+  bot.on('end', reason => {
+    cleanup();
+    console.log(`⛔ Bot Disconnected (${reason}).`);
+    scheduleReconnect();
+  });
+}
+
+process.on('SIGTERM', () => {
+  cleanupCurrentBot();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  cleanupCurrentBot();
+  process.exit(0);
+});
+
+function cleanupCurrentBot() {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  try { bot?.quit('Process shutting down'); } catch (_) {}
 }
 
 console.log(`🤖 Starting AFK Bot → ${config.serverHost}:${config.serverPort}`);
