@@ -14,20 +14,23 @@ let watchdogTimer = null;
 let movementTimer = null;
 let armInterval = null;
 let chatInterval = null;
-let rightClickInterval = null;
 let armorTimer = null;
-let rightClickBusy = false;
-let armorBusy = false;
 
 const RECONNECT_MIN = 5000;
 const RECONNECT_MAX = 60000;
 const SPAWN_TIMEOUT = 45000;
 const WATCHDOG_INTERVAL = 15000;
-const STEP_INTERVAL = 1200;
-const JUMP_DURATION = 400;
 
-function safeClearTimeout(timer) { if (timer) clearTimeout(timer); return null; }
-function safeClearInterval(timer) { if (timer) clearInterval(timer); return null; }
+// More natural movement: short walks, pauses, turns and occasional jumps.
+const MOVE_MIN = 3500;
+const MOVE_MAX = 9000;
+const PAUSE_MIN = 2500;
+const PAUSE_MAX = 7000;
+
+function clearTimeoutSafe(t) { if (t) clearTimeout(t); return null; }
+function clearIntervalSafe(t) { if (t) clearInterval(t); return null; }
+function random(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
+function chance(percent) { return Math.random() * 100 < percent; }
 
 function stopMovement() {
   if (!bot) return;
@@ -37,15 +40,12 @@ function stopMovement() {
 }
 
 function cleanupTimers() {
-  movementTimer = safeClearTimeout(movementTimer);
-  armorTimer = safeClearTimeout(armorTimer);
-  spawnTimer = safeClearTimeout(spawnTimer);
-  watchdogTimer = safeClearInterval(watchdogTimer);
-  armInterval = safeClearInterval(armInterval);
-  chatInterval = safeClearInterval(chatInterval);
-  rightClickInterval = safeClearInterval(rightClickInterval);
-  rightClickBusy = false;
-  armorBusy = false;
+  movementTimer = clearTimeoutSafe(movementTimer);
+  armorTimer = clearTimeoutSafe(armorTimer);
+  spawnTimer = clearTimeoutSafe(spawnTimer);
+  watchdogTimer = clearIntervalSafe(watchdogTimer);
+  armInterval = clearIntervalSafe(armInterval);
+  chatInterval = clearIntervalSafe(chatInterval);
   stopMovement();
 }
 
@@ -57,21 +57,14 @@ function scheduleReconnect(reason = 'connection ended') {
   reconnectAttempt += 1;
   const delay = Math.min(RECONNECT_MAX, RECONNECT_MIN * Math.pow(2, Math.min(reconnectAttempt - 1, 4)));
   console.log(`🔄 [RECONNECT] #${reconnectAttempt} in ${Math.ceil(delay / 1000)}s | ${reason}`);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    createBot();
-  }, delay);
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; createBot(); }, delay);
 }
 
 function dnsProbe() {
   return new Promise(resolve => {
     console.log(`🔎 [DNS] Resolving ${config.serverHost}...`);
     dns.lookup(config.serverHost, { all: true }, (err, addresses) => {
-      if (err) {
-        console.log(`❌ [DNS] ${err.code || 'ERROR'}: ${err.message}`);
-        resolve(false);
-        return;
-      }
+      if (err) { console.log(`❌ [DNS] ${err.code || 'ERROR'}: ${err.message}`); resolve(false); return; }
       console.log(`✅ [DNS] ${addresses.map(a => a.address).join(', ')}`);
       resolve(true);
     });
@@ -83,25 +76,11 @@ function tcpProbe() {
     console.log(`🔎 [TCP] Checking ${config.serverHost}:${config.serverPort}...`);
     const socket = net.createConnection({ host: config.serverHost, port: config.serverPort });
     let finished = false;
-    const finish = ok => {
-      if (finished) return;
-      finished = true;
-      try { socket.destroy(); } catch (_) {}
-      resolve(ok);
-    };
+    const finish = ok => { if (finished) return; finished = true; try { socket.destroy(); } catch (_) {} resolve(ok); };
     socket.setTimeout(8000);
-    socket.once('connect', () => {
-      console.log('✅ [TCP] Port is reachable.');
-      finish(true);
-    });
-    socket.once('timeout', () => {
-      console.log('⚠️ [TCP] Timeout after 8s.');
-      finish(false);
-    });
-    socket.once('error', err => {
-      console.log(`❌ [TCP] ${err.code || 'ERROR'}: ${err.message}`);
-      finish(false);
-    });
+    socket.once('connect', () => { console.log('✅ [TCP] Port is reachable.'); finish(true); });
+    socket.once('timeout', () => { console.log('⚠️ [TCP] Timeout after 8s.'); finish(false); });
+    socket.once('error', err => { console.log(`❌ [TCP] ${err.code || 'ERROR'}: ${err.message}`); finish(false); });
   });
 }
 
@@ -117,9 +96,8 @@ async function createBot() {
   connectionAttempt += 1;
   console.log(`\n================ ATTEMPT #${connectionAttempt} ================`);
 
-  const reachable = await preflight();
-  if (!reachable) {
-    console.log('⏳ [RETRY] Server is unreachable. I will keep trying indefinitely.');
+  if (!(await preflight())) {
+    console.log('⏳ [RETRY] Server unreachable. I will keep trying.');
     scheduleReconnect('preflight failed');
     return;
   }
@@ -140,53 +118,65 @@ async function createBot() {
     return;
   }
 
-  let movementPhase = 0;
   let lastEntityTime = Date.now();
-  const movements = [
-    () => bot.setControlState('forward', true),
-    () => bot.setControlState('back', true),
-    () => bot.setControlState('left', true),
-    () => bot.setControlState('right', true),
-    () => { bot.setControlState('jump', true); setTimeout(() => bot?.entity && bot.setControlState('jump', false), JUMP_DURATION); },
-    () => { bot.setControlState('forward', true); bot.setControlState('jump', true); setTimeout(() => { if (bot?.entity) { bot.setControlState('jump', false); bot.setControlState('forward', false); } }, JUMP_DURATION); },
-    () => bot.look(Math.random() * Math.PI * 2, (Math.random() - 0.5) * Math.PI * 0.5, true),
-    () => { bot.setControlState('sneak', true); setTimeout(() => bot?.entity && bot.setControlState('sneak', false), 800); }
-  ];
+  let currentAction = 0;
 
-  function swingArm() { if (bot?.entity) try { bot.swingArm(); } catch (_) {} }
-  function movementCycle() {
-    if (!bot?.entity || shuttingDown) return;
-    lastEntityTime = Date.now();
-    try { stopMovement(); movements[movementPhase](); swingArm(); movementPhase = (movementPhase + 1) % movements.length; }
-    catch (err) { console.log(`⚠️ [MOVEMENT] ${err.message}`); }
-    movementTimer = setTimeout(movementCycle, randomInterval(STEP_INTERVAL));
-  }
-
-  const chatMessages = ['AFK Bot is active!','Still here, keeping the server alive!','Bot running smoothly.','Server is alive and well!'];
-  let chatIndex = 0;
-  function sendHourlyChat() {
+  // Natural-looking idle/movement cycle. It does not run constantly:
+  // the bot walks for a while, stops, looks around, then chooses another action.
+  function lookAround() {
     if (!bot?.entity) return;
-    try { const msg = chatMessages[chatIndex++ % chatMessages.length]; bot.chat(msg); console.log(`💬 [CHAT OUT] ${msg}`); }
-    catch (err) { console.log(`⚠️ [CHAT] ${err.message}`); }
+    try {
+      const yaw = bot.entity.yaw + (Math.random() - 0.5) * 1.8;
+      const pitch = Math.max(-0.45, Math.min(0.45, bot.entity.pitch + (Math.random() - 0.5) * 0.5));
+      bot.look(yaw, pitch, true);
+    } catch (_) {}
   }
 
-  async function rightClickInventoryItem() {
-    if (!bot?.entity || rightClickBusy) return;
-    const item = bot.inventory.items()[0];
-    if (!item) return;
-    rightClickBusy = true;
-    try {
-      await bot.equip(item, 'hand');
-      for (let i = 0; i < 3; i++) {
-        if (!bot?.entity) return;
-        bot.activateItem();
-        await new Promise(r => setTimeout(r, 300));
-        bot.deactivateItem();
-        await new Promise(r => setTimeout(r, 200));
-      }
-      console.log(`🖱️ [INVENTORY] Right-clicked ${item.name} x3`);
-    } catch (err) { console.log(`⚠️ [INVENTORY] ${err.message}`); }
-    finally { rightClickBusy = false; }
+  function doShortWalk(direction, duration) {
+    if (!bot?.entity) return;
+    stopMovement();
+    bot.setControlState(direction, true);
+    if (chance(18)) bot.setControlState('sprint', true);
+    if (chance(12)) {
+      setTimeout(() => { if (bot?.entity) bot.setControlState('jump', true); }, random(500, Math.max(501, duration - 500)));
+      setTimeout(() => { if (bot?.entity) bot.setControlState('jump', false); }, random(700, 1000));
+    }
+    movementTimer = setTimeout(() => {
+      stopMovement();
+      lookAround();
+      scheduleNextMovement(random(PAUSE_MIN, PAUSE_MAX));
+    }, duration);
+  }
+
+  function scheduleNextMovement(delay = random(PAUSE_MIN, PAUSE_MAX)) {
+    movementTimer = clearTimeoutSafe(movementTimer);
+    movementTimer = setTimeout(() => {
+      if (!bot?.entity || shuttingDown) return;
+
+      const actions = [
+        () => doShortWalk('forward', random(MOVE_MIN, MOVE_MAX)),
+        () => doShortWalk('back', random(2500, 6000)),
+        () => doShortWalk('left', random(2200, 5000)),
+        () => doShortWalk('right', random(2200, 5000)),
+        () => { lookAround(); scheduleNextMovement(random(3000, 6500)); },
+        () => {
+          lookAround();
+          if (chance(45)) bot.swingArm();
+          scheduleNextMovement(random(3500, 7500));
+        }
+      ];
+
+      // Avoid repeating the exact same action twice in a row.
+      let next;
+      do { next = random(0, actions.length - 1); } while (actions.length > 1 && next === currentAction);
+      currentAction = next;
+      actions[next]();
+    }, delay);
+  }
+
+  function occasionalLook() {
+    if (!bot?.entity) return;
+    if (chance(70)) lookAround();
   }
 
   const armorSlots = {
@@ -195,6 +185,8 @@ async function createBot() {
     legs: ['netherite_leggings','diamond_leggings','iron_leggings','golden_leggings','chainmail_leggings','leather_leggings'],
     feet: ['netherite_boots','diamond_boots','iron_boots','golden_boots','chainmail_boots','leather_boots']
   };
+
+  let armorBusy = false;
   async function equipArmor() {
     if (!bot?.entity || armorBusy) return;
     armorBusy = true;
@@ -229,24 +221,30 @@ async function createBot() {
     reconnectAttempt = 0;
     startedAt = Date.now();
     lastEntityTime = Date.now();
-    spawnTimer = safeClearTimeout(spawnTimer);
+    spawnTimer = clearTimeoutSafe(spawnTimer);
     console.log(`🎉 [SPAWN] SUCCESS — ${config.botUsername} joined ${config.serverHost}:${config.serverPort}`);
     if (bot.entity?.position) console.log(`📍 [POSITION] ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
-    movementTimer = setTimeout(movementCycle, STEP_INTERVAL);
+
+    // Start with a short natural pause instead of instantly moving.
+    lookAround();
+    scheduleNextMovement(random(3000, 7000));
     armorTimer = setTimeout(equipArmor, 4000);
-    rightClickInterval = setInterval(rightClickInventoryItem, 120000);
-    chatInterval = setInterval(sendHourlyChat, 3600000);
-    armInterval = setInterval(swingArm, 30000);
-    watchdogTimer = setInterval(watchdog, WATCHDOG_INTERVAL);
+    armInterval = setInterval(occasionalLook, 25000);
+    chatInterval = setInterval(() => {
+      // No automatic chat spam; only a harmless status log.
+      if (bot?.entity) console.log(`💚 [ALIVE] ${Math.floor((Date.now() - startedAt) / 1000)}s | hp=${bot.health} | food=${bot.food}`);
+    }, 5 * 60 * 1000);
+    watchdogTimer = setInterval(watchdog, 15000);
   });
+
+  bot.on('move', () => { if (bot?.entity) lastEntityTime = Date.now(); });
   bot.on('game', game => console.log(`🎮 [GAME] ${game?.dimension || 'unknown dimension'}`));
   bot.on('health', () => console.log(`❤️ [HEALTH] ${bot.health} | food=${bot.food}`));
-  bot.on('resourcePack', () => console.log('📦 [RESOURCE PACK] Server requested resource pack.'));
   bot.on('kicked', reason => console.log(`🚫 [KICKED] ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`));
   bot.on('error', err => console.log(`❌ [ERROR] ${err.code || 'NO_CODE'}: ${err.message}`));
   bot.on('end', reason => { console.log(`⛔ [END] ${reason || 'connection closed'}`); if (!shuttingDown) scheduleReconnect(reason || 'connection ended'); });
   bot.on('chat', (username, message) => { if (username !== config.botUsername) console.log(`💬 [CHAT IN] ${username}: ${message}`); });
-  bot.on('playerCollect', collector => { if (collector.username === config.botUsername) { armorTimer = safeClearTimeout(armorTimer); armorTimer = setTimeout(equipArmor, 1000); } });
+  bot.on('playerCollect', collector => { if (collector.username === config.botUsername) { armorTimer = clearTimeoutSafe(armorTimer); armorTimer = setTimeout(equipArmor, 1000); } });
 
   spawnTimer = setTimeout(() => {
     if (!bot?.entity && !shuttingDown) {
@@ -257,37 +255,10 @@ async function createBot() {
   }, SPAWN_TIMEOUT);
 }
 
-function start() {
-  if (bot?.entity) return;
-  shuttingDown = false;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  createBot();
-}
-function stop(reason = 'web panel') {
-  shuttingDown = true;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  cleanupTimers();
-  startedAt = null;
-  try { bot?.quit(reason); } catch (_) {}
-  bot = null;
-  console.log(`🛑 [STOP] ${reason}`);
-}
-function reconnect(reason = 'web panel') {
-  shuttingDown = false;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-  cleanupTimers();
-  try { bot?.quit(`Reconnect: ${reason}`); } catch (_) {}
-  bot = null;
-  console.log(`🔁 [MANUAL RECONNECT] ${reason}`);
-  setTimeout(() => { if (!shuttingDown) createBot(); }, RECONNECT_MIN);
-}
-function chat(message) {
-  if (!bot?.entity) throw new Error('Bot is offline');
-  bot.chat(String(message));
-}
+function start() { if (bot?.entity) return; shuttingDown = false; if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null; createBot(); }
+function stop(reason = 'manual stop') { shuttingDown = true; if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null; cleanupTimers(); startedAt = null; try { bot?.quit(reason); } catch (_) {} bot = null; console.log(`🛑 [STOP] ${reason}`); }
+function reconnect(reason = 'manual reconnect') { shuttingDown = false; if (reconnectTimer) clearTimeout(reconnectTimer); reconnectTimer = null; cleanupTimers(); try { bot?.quit(`Reconnect: ${reason}`); } catch (_) {} bot = null; console.log(`🔁 [MANUAL RECONNECT] ${reason}`); setTimeout(() => { if (!shuttingDown) createBot(); }, RECONNECT_MIN); }
+function chat(message) { if (!bot?.entity) throw new Error('Bot is offline'); bot.chat(String(message)); }
 function shutdown(signal) { stop(signal); setTimeout(() => process.exit(0), 1000).unref(); }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
@@ -296,6 +267,7 @@ console.log('============================================================');
 console.log(`🤖 Survival Economy Bot | ${new Date().toISOString()}`);
 console.log(`🎯 ${config.serverHost}:${config.serverPort} | 👤 ${config.botUsername}`);
 console.log('♾️ Continuous retry: ENABLED');
+console.log('🧍 Natural movement: ENABLED');
 console.log('============================================================');
 start();
 
