@@ -1,7 +1,7 @@
 {
   "serverHost": "RIFE_CRAFT1.aternos.me",
   "serverPort": 41707,
-  "botUsername": "AFKBot",
+  "botUsername": "Bot",
   "botChunk": 1,
   "version": "1.21.4"
 }
