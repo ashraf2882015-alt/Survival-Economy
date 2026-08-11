@@ -1,11 +1,12 @@
 {
   "name": "@workspace/bot",
   "version": "1.0.0",
-  "description": "Minecraft AFK Bot",
+  "description": "Minecraft Bot with Web Control Panel",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js",
-    "bot": "node bot.js"
+    "start": "node control.js",
+    "bot": "node bot.js",
+    "panel": "node control.js"
   },
   "license": "MIT",
   "dependencies": {
