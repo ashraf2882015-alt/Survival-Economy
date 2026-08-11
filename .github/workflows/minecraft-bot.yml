@@ -12,9 +12,11 @@ on:
   schedule:
     - cron: '0 */4 * * *'
 
+# Never allow a scheduled/manual run to kill a healthy bot session.
+# A new scheduled run will wait for the current one to finish.
 concurrency:
   group: minecraft-bot
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
