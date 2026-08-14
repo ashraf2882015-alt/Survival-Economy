@@ -105,6 +105,21 @@ server.listen(PORT, HOST, () => {
   console.log(`🌐 [WEB] Control panel listening on http://${HOST}:${PORT}`);
 });
 
+// A malformed/unsupported packet should not leave the GitHub runner dead.
+// Mineflayer can surface protocol decoder failures as uncaught exceptions.
+process.on('uncaughtException', err => {
+  console.error(`💥 [PROCESS] Uncaught exception: ${err?.stack || err}`);
+  try {
+    botApi.reconnect('protocol/process exception');
+  } catch (reconnectError) {
+    console.error(`💥 [PROCESS] Recovery failed: ${reconnectError?.stack || reconnectError}`);
+  }
+});
+
+process.on('unhandledRejection', reason => {
+  console.error(`💥 [PROCESS] Unhandled rejection: ${reason?.stack || reason}`);
+});
+
 function shutdown() {
   server.close();
 }
