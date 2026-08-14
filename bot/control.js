@@ -19,21 +19,28 @@ function json(res, status, data) {
 }
 
 function status() {
-  const bot = botApi.getBot();
+  const bots = typeof botApi.getBots === 'function' ? botApi.getBots() : [];
   const config = botApi.getConfig();
+  const servers = Array.isArray(config.servers) ? config.servers : [];
+
   return {
-    online: Boolean(bot?.entity),
-    connecting: Boolean(bot),
-    username: bot?.username || config.botUsername,
-    server: `${config.serverHost}:${config.serverPort}`,
-    health: bot?.health ?? null,
-    food: bot?.food ?? null,
-    position: bot?.entity?.position ? {
-      x: Number(bot.entity.position.x.toFixed(1)),
-      y: Number(bot.entity.position.y.toFixed(1)),
-      z: Number(bot.entity.position.z.toFixed(1))
-    } : null,
-    startedAt: botApi.getStartedAt()
+    online: bots.filter(bot => Boolean(bot?.entity)).length,
+    total: bots.length,
+    connecting: bots.filter(Boolean).length,
+    servers,
+    bots: bots.map((bot, index) => ({
+      index: index + 1,
+      online: Boolean(bot?.entity),
+      connecting: Boolean(bot),
+      username: bot?.username || `${config.botUsername || 'Bot'}${index + 1}`,
+      health: bot?.health ?? null,
+      food: bot?.food ?? null,
+      position: bot?.entity?.position ? {
+        x: Number(bot.entity.position.x.toFixed(1)),
+        y: Number(bot.entity.position.y.toFixed(1)),
+        z: Number(bot.entity.position.z.toFixed(1))
+      } : null
+    }))
   };
 }
 
