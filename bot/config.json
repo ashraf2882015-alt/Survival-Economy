@@ -1,6 +1,7 @@
 {
-  "serverHost": "RIFI_CRAFT.aternos.me",
-  "serverPort": 44837,
+  "servers": [
+    "RIFI_CRAFT.aternos.me:44837"
+  ],
   "botUsername": "Bot",
   "botChunk": 1,
   "version": "1.21.4"
