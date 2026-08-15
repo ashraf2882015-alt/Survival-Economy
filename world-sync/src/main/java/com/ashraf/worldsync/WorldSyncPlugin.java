@@ -3,22 +3,26 @@ package com.ashraf.worldsync;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.event.world.TimeSkipEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class WorldSyncPlugin extends JavaPlugin implements Listener {
+public final class WorldSyncPlugin extends JavaPlugin {
+    private PlayerSyncBridge playerSync;
+
     @Override public void onEnable() {
+        playerSync = new PlayerSyncBridge();
         Bukkit.getPluginManager().registerEvents(this, this);
+        Bukkit.getPluginManager().registerEvents(playerSync, this);
         getCommand("worldsynctest").setExecutor((sender, command, label, args) -> {
-            sender.sendMessage(ChatColor.GREEN + "WorldSync 0.1.0 is enabled on " + Bukkit.getServer().getName());
-            sender.sendMessage(ChatColor.GRAY + "Mode: local event capture (bridge not enabled yet)");
+            sender.sendMessage(ChatColor.GREEN + "WorldSync 0.2.0 enabled");
+            sender.sendMessage(ChatColor.GRAY + "Local players tracked: " + playerSync.snapshots().size());
+            sender.sendMessage(ChatColor.GRAY + "Remote-player rendering: bridge pending");
             return true;
         });
-        getLogger().info("WorldSync enabled. Local block/time/weather events are being observed.");
+        getLogger().info("WorldSync enabled: world events + player movement state capture.");
     }
 
     @EventHandler public void onPlace(BlockPlaceEvent e) {
