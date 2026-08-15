@@ -1,0 +1,14 @@
+name: WorldSync
+version: 0.1.0
+main: com.ashraf.worldsync.WorldSyncPlugin
+api-version: '1.21'
+author: Ashraf
+description: Experimental block/time/weather synchronization between Paper servers
+commands:
+  worldsynctest:
+    description: Show WorldSync status
+    usage: /worldsynctest
+    permission: worldsync.admin
+permissions:
+  worldsync.admin:
+    default: op
