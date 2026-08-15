@@ -13,16 +13,18 @@ public final class WorldSyncPlugin extends JavaPlugin {
     private PlayerSyncBridge playerSync;
 
     @Override public void onEnable() {
-        playerSync = new PlayerSyncBridge();
+        saveDefaultConfig();
+        playerSync = new PlayerSyncBridge(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(playerSync, this);
         getCommand("worldsynctest").setExecutor((sender, command, label, args) -> {
-            sender.sendMessage(ChatColor.GREEN + "WorldSync 0.2.0 enabled");
+            sender.sendMessage(ChatColor.GREEN + "WorldSync 0.3.0 enabled");
             sender.sendMessage(ChatColor.GRAY + "Local players tracked: " + playerSync.snapshots().size());
-            sender.sendMessage(ChatColor.GRAY + "Remote-player rendering: bridge pending");
+            sender.sendMessage(ChatColor.GRAY + "Transfer: " + getConfig().getBoolean("transfer.enabled", true));
+            sender.sendMessage(ChatColor.GRAY + "Next server: " + getConfig().getString("transfer.next-server", ""));
             return true;
         });
-        getLogger().info("WorldSync enabled: world events + player movement state capture.");
+        getLogger().info("WorldSync enabled: player tracking + experimental Paper server transfer.");
     }
 
     @EventHandler public void onPlace(BlockPlaceEvent e) {
