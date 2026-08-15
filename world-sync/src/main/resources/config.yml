@@ -1,0 +1,11 @@
+# WorldSync experimental server-to-server transfer.
+# Use the real Paper/Aternos address of the destination server.
+# Example: play.example.net:25565
+server-id: server-a
+transfer:
+  enabled: true
+  # Boundary used by the prototype. Crossing X >= max-x transfers to next-server.
+  min-x: -30000000
+  max-x: 30000000
+  next-server: ""
+  cooldown-ms: 5000
