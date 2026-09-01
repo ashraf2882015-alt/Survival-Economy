@@ -9,12 +9,9 @@
     "panel": "node control.js"
   },
   "license": "MIT",
-  "engines": {
-    "node": ">=22"
-  },
   "dependencies": {
-    "minecraft-protocol": "github:PrismarineJS/node-minecraft-protocol#pc26_2",
-    "mineflayer": "github:zkonikishi/Mineflayer#26.2",
+    "minecraft-protocol": "github:PrismarineJS/node-minecraft-protocol",
+    "mineflayer": "github:PrismarineJS/mineflayer",
     "mineflayer-armor-manager": "^2.0.1"
   }
 }
