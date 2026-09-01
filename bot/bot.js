@@ -4,16 +4,14 @@ const dns = require('dns');
 const https = require('https');
 const config = require('./config.json');
 
-// config.json now accepts servers as ["HOST:PORT", ...].
-// Each entry gets its own independent Mineflayer connection and reconnect loop.
+// Exactly two independent server sessions are configured in config.json.
 const servers = Array.isArray(config.servers) && config.servers.length
-  ? config.servers
+  ? config.servers.slice(0, 2)
   : [`${config.serverHost}:${config.serverPort}`];
 
 const RECONNECT_MIN = 5000;
 const RECONNECT_MAX = 60000;
 const SPAWN_TIMEOUT = 45000;
-const WATCHDOG_INTERVAL = 15000;
 const CONTROL_URL = 'https://raw.githubusercontent.com/ashraf2882015-alt/Survival-Economy/main/control.json';
 
 let shuttingDown = false;
@@ -29,7 +27,6 @@ function parseServer(value) {
   return { host: text, port: 25565 };
 }
 
-function random(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
 function chance(percent) { return Math.random() * 100 < percent; }
 
 function makeSession(serverValue, index) {
@@ -40,7 +37,6 @@ function makeSession(serverValue, index) {
     bot: null,
     reconnectTimer: null,
     spawnTimer: null,
-    watchdogTimer: null,
     movementTimer: null,
     armorTimer: null,
     armInterval: null,
@@ -49,7 +45,6 @@ function makeSession(serverValue, index) {
     kickRenameCount: 0,
     nextUsername: `${config.botUsername || 'Bot'}${index > 1 ? index : ''}`.slice(0, 16),
     startedAt: null,
-    lastEntityTime: Date.now(),
     kickHandled: false
   };
 
@@ -73,7 +68,6 @@ function makeSession(serverValue, index) {
     clearTimer('movementTimer');
     clearTimer('armorTimer');
     clearTimer('spawnTimer');
-    clearIntervalTimer('watchdogTimer');
     clearIntervalTimer('armInterval');
     stopMovement();
   }
@@ -193,29 +187,18 @@ function makeSession(serverValue, index) {
         }
       } finally { armorBusy = false; }
     }
-    function watchdog() {
-      if (!state.bot || shuttingDown) return;
-      if (!bot.entity || Date.now() - state.lastEntityTime > 120000) {
-        console.log(`${prefix()} ⚠️ Watchdog reconnect`);
-        try { bot.quit('Watchdog reconnect'); } catch (_) {}
-        scheduleReconnect('watchdog');
-      }
-    }
 
     bot.once('login', () => console.log(`${prefix()} 🔐 Login accepted as ${username}`));
     bot.once('spawn', () => {
       state.reconnectAttempt = 0;
       state.startedAt = Date.now();
-      state.lastEntityTime = Date.now();
       clearTimer('spawnTimer');
       console.log(`${prefix()} 🎉 SPAWN SUCCESS — ${username}`);
       if (bot.entity?.position) console.log(`${prefix()} 📍 ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
       if (danceEnabled) { danceIndex = 0; clearTimer('movementTimer'); danceStep(); }
       state.armorTimer = setTimeout(equipArmor, 4000);
       state.armInterval = setInterval(() => { if (bot?.entity && chance(70)) lookAround(); }, 8000);
-      state.watchdogTimer = setInterval(watchdog, WATCHDOG_INTERVAL);
     });
-    bot.on('move', () => { if (bot?.entity) state.lastEntityTime = Date.now(); });
     bot.on('game', game => console.log(`${prefix()} 🎮 ${game?.dimension || 'unknown dimension'}`));
     bot.on('health', () => console.log(`${prefix()} ❤️ hp=${bot.health} food=${bot.food}`));
     bot.on('kicked', reason => { console.log(`${prefix()} 🚫 KICKED ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`); changeNameAfterKick(); });
@@ -323,6 +306,7 @@ console.log('♾️ Continuous retry: ENABLED');
 console.log('🧍 Natural movement: ENABLED');
 console.log('💃 Dance movement: ENABLED');
 console.log('🔄 Kick → rename → reconnect: ENABLED');
+console.log('🛡️ Entity-movement watchdog: DISABLED');
 console.log('🎛️ GitHub control polling: ENABLED');
 console.log('============================================================');
 
