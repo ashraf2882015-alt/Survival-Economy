@@ -55,6 +55,7 @@ function makeSession(serverValue, index) {
     reconnectTimer: null,
     spawnTimer: null,
     movementTimer: null,
+    stuckTimer: null,
     armorTimer: null,
     armInterval: null,
     reconnectAttempt: 0,
@@ -83,6 +84,7 @@ function makeSession(serverValue, index) {
   }
   function cleanup() {
     clearTimer('movementTimer');
+    clearIntervalTimer('stuckTimer');
     state.startWandering = null;
     try { state.bot?.pathfinder?.setGoal(null); } catch (_) {}
     clearTimer('armorTimer');
@@ -238,6 +240,38 @@ function makeSession(serverValue, index) {
       movement.allowParkour = false;
       movement.allowSprinting = true;
       bot.pathfinder.setMovements(movement);
+
+      // If pathfinder keeps trying but the bot barely moves, assume it bumped into an obstacle.
+      let lastPosition = bot.entity.position.clone();
+      let stuckChecks = 0;
+      state.stuckTimer = setInterval(() => {
+        if (!bot?.entity || shuttingDown || !danceEnabled) return;
+        const current = bot.entity.position;
+        const moved = current.distanceTo(lastPosition);
+        lastPosition = current.clone();
+
+        if (bot.pathfinder.isMoving() && moved < 0.12) {
+          stuckChecks += 1;
+        } else {
+          stuckChecks = 0;
+        }
+
+        if (stuckChecks >= 2) {
+          stuckChecks = 0;
+          const turnAngle = bot.entity.yaw + Math.PI + (Math.random() - 0.5) * 0.7;
+          const distance = 7 + Math.random() * 5;
+          const x = Math.floor(current.x - Math.sin(turnAngle) * distance);
+          const z = Math.floor(current.z + Math.cos(turnAngle) * distance);
+          const y = Math.floor(current.y);
+          try {
+            bot.pathfinder.setGoal(new GoalNear(x, y, z, 2));
+            console.log(`${prefix()} ↩️ Obstacle detected — turning around toward ${x}, ${y}, ${z}`);
+          } catch (err) {
+            console.log(`${prefix()} ⚠️ Could not change direction: ${err.message}`);
+          }
+        }
+      }, 1000);
+
       state.startWandering = startWandering;
       if (danceEnabled) startWandering();
       bot.on('goal_reached', () => {
