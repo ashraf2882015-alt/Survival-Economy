@@ -189,26 +189,17 @@ function makeSession(serverValue, index) {
       if (!bot?.entity) return;
       try { bot.look(bot.entity.yaw + (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 0.35, true); } catch (_) {}
     }
-    function chooseWanderTarget() {
-      if (!bot?.entity || shuttingDown || !danceEnabled) return;
-      const pos = bot.entity.position;
-      const angle = Math.random() * Math.PI * 2;
-      const distance = 8 + Math.random() * 12;
-      const x = Math.floor(pos.x + Math.cos(angle) * distance);
-      const z = Math.floor(pos.z + Math.sin(angle) * distance);
-      const y = Math.floor(pos.y);
-      try {
-        bot.pathfinder.setGoal(new GoalNear(x, y, z, 2));
-        console.log(`${prefix()} 🧭 Wandering toward ${x}, ${y}, ${z}`);
-      } catch (err) {
-        console.log(`${prefix()} ⚠️ Path goal: ${err.message}`);
-        state.movementTimer = setTimeout(chooseWanderTarget, 3000);
-      }
-    }
     function startWandering() {
       if (!bot?.entity || shuttingDown || !danceEnabled) return;
       clearTimer('movementTimer');
-      chooseWanderTarget();
+      try {
+        bot.pathfinder.setGoal(null);
+        bot.setControlState('forward', true);
+        bot.setControlState('sprint', true);
+        console.log(`${prefix()} 🏃 Continuous forward movement enabled`);
+      } catch (err) {
+        console.log(`${prefix()} ⚠️ Direct movement: ${err.message}`);
+      }
     }
     async function equipArmor() {
       if (!bot?.entity || armorBusy) return;
@@ -259,38 +250,23 @@ function makeSession(serverValue, index) {
       movement.allowSprinting = true;
       bot.pathfinder.setMovements(movement);
 
-      // Check every 500ms and choose a new destination when movement stalls.
-      // Collisions are acceptable; the goal is to keep the bot moving.
-      let lastPosition = bot.entity.position.clone();
+      // Keep pressing forward even when colliding with blocks.
+      // Turn occasionally so the bot can move away from a wall when possible.
+      let movementYaw = bot.entity.yaw;
       state.stuckTimer = setInterval(() => {
         if (!bot?.entity || shuttingDown || !danceEnabled) return;
-        const current = bot.entity.position;
-        const moved = current.distanceTo(lastPosition);
-        lastPosition = current.clone();
-
-        if (bot.pathfinder.isMoving() && moved < 0.08) {
-          try {
-            chooseWanderTarget();
-            console.log(`${prefix()} 🔀 Movement stalled — picking another random destination`);
-          } catch (err) {
-            console.log(`${prefix()} ⚠️ Could not pick another destination: ${err.message}`);
-          }
+        try {
+          bot.setControlState('forward', true);
+          bot.setControlState('sprint', true);
+          movementYaw += (Math.random() - 0.5) * 1.4;
+          Promise.resolve(bot.look(movementYaw, 0, true)).catch(() => {});
+        } catch (err) {
+          console.log(`${prefix()} ⚠️ Movement control: ${err.message}`);
         }
-      }, 500);
+      }, 1800);
 
       state.startWandering = startWandering;
       if (danceEnabled) startWandering();
-      bot.on('goal_reached', () => {
-        clearTimer('movementTimer');
-        // Pick the next destination immediately so the bot does not idle between walks.
-        chooseWanderTarget();
-      });
-      bot.on('path_update', result => {
-        if (result.status === 'noPath' || result.status === 'timeout') {
-          clearTimer('movementTimer');
-          state.movementTimer = setTimeout(chooseWanderTarget, 800);
-        }
-      });
       state.armorTimer = setTimeout(equipArmor, 4000);
       state.armInterval = setInterval(() => { if (bot?.entity && chance(70)) lookAround(); }, 8000);
     });
