@@ -50,3 +50,6 @@ Thumbs.db
 
 # Local Minecraft bot authentication state
 /bot/.auth-state.json
+
+# Local Minecraft bot username rotation state
+/bot/.bot-name-state.json
