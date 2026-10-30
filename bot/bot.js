@@ -3,6 +3,22 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const net = require('net');
 const dns = require('dns');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
+
+// AuthMe credentials are supplied locally; never commit them to the repository.
+const AUTHME_PASSWORD = process.env.BOT_AUTHME_PASSWORD;
+const AUTH_STATE_FILE = path.join(__dirname, '.auth-state.json');
+function readAuthState() {
+  try { return JSON.parse(fs.readFileSync(AUTH_STATE_FILE, 'utf8')); } catch (_) { return {}; }
+}
+function saveAuthState(username) {
+  const state = readAuthState();
+  state[username] = { registered: true };
+  try { fs.writeFileSync(AUTH_STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 }); }
+  catch (err) { console.log(`⚠️ [AUTHME] Could not save local registration state: ${err.message}`); }
+}
+function isAuthRegistered(username) { return readAuthState()[username]?.registered === true; }
 const config = require('./config.json');
 
 // Exactly two independent server sessions are configured in config.json.
@@ -193,21 +209,25 @@ function makeSession(serverValue, index) {
     bot.once('login', () => console.log(`${prefix()} 🔐 Login accepted as ${username}`));
     bot.once('spawn', () => {
       state.reconnectAttempt = 0;
-      const authPassword = process.env.BOT_AUTHME_PASSWORD;
-      if (authPassword) {
-        setTimeout(() => {
-          if (state.bot === bot && bot.player) {
-            try {
-              bot.chat(`/login ${authPassword}`);
-              console.log(`${prefix()} 🔐 AuthMe login command sent`);
-            } catch (err) {
-              console.log(`${prefix()} ⚠️ AuthMe login command failed: ${err.message}`);
-            }
+      // Register this dedicated bot account once, then login on later joins.
+      setTimeout(() => {
+        if (state.bot !== bot || !bot.player) return;
+        if (!AUTHME_PASSWORD) {
+          console.log(`${prefix()} ⚠️ Set BOT_AUTHME_PASSWORD locally to enable AuthMe`);
+          return;
+        }
+        try {
+          if (isAuthRegistered(username)) {
+            bot.chat(`/login ${AUTHME_PASSWORD}`);
+            console.log(`${prefix()} 🔐 AuthMe login command sent`);
+          } else {
+            bot.chat(`/register ${AUTHME_PASSWORD} ${AUTHME_PASSWORD}`);
+            console.log(`${prefix()} 📝 AuthMe first-time register command sent`);
           }
-        }, 1500);
-      } else {
-        console.log(`${prefix()} ⚠️ AuthMe password not set; define BOT_AUTHME_PASSWORD`);
-      }
+        } catch (err) {
+          console.log(`${prefix()} ⚠️ AuthMe command failed: ${err.message}`);
+        }
+      }, 1800);
       state.startedAt = Date.now();
       clearTimer('spawnTimer');
       console.log(`${prefix()} 🎉 SPAWN SUCCESS — ${username}`);
@@ -241,6 +261,21 @@ function makeSession(serverValue, index) {
       state.bot = null;
       console.log(`${prefix()} ⛔ END ${reason || 'connection closed'}`);
       if (!shuttingDown) scheduleReconnect(reason || 'connection ended');
+    });
+    bot.on('messagestr', message => {
+      const text = String(message || '').toLowerCase();
+      if (text.includes('successfully registered') || text.includes('registration successful') || text.includes('you are now registered')) {
+        saveAuthState(username);
+        console.log(`${prefix()} ✅ AuthMe registration confirmed and saved locally`);
+      } else if (text.includes('already registered')) {
+        saveAuthState(username);
+        console.log(`${prefix()} ℹ️ AuthMe says account is already registered; logging in`);
+        if (state.bot === bot && AUTHME_PASSWORD) bot.chat(`/login ${AUTHME_PASSWORD}`);
+      } else if (text.includes('successfully logged in') || text.includes('successful login') || text.includes('you are now logged in')) {
+        console.log(`${prefix()} ✅ AuthMe login confirmed`);
+      } else if (text.includes('wrong password') || text.includes('incorrect password') || text.includes('invalid password')) {
+        console.log(`${prefix()} ❌ AuthMe rejected the configured bot password`);
+      }
     });
     bot.on('chat', (usernameIn, message) => { if (usernameIn !== username) console.log(`${prefix()} 💬 ${usernameIn}: ${message}`); });
     bot.on('playerCollect', collector => { if (collector.username === username) { clearTimer('armorTimer'); state.armorTimer = setTimeout(equipArmor, 1000); } });
