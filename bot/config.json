@@ -1,7 +1,8 @@
 {
   "servers": [
     "RNZ_SMP.aternos.me:48280",
-    "RNZWORLDCUP.aternos.me:60576"
+    "RNZWORLDCUP.aternos.me:60576",
+    "gummy-bear.aternos.me:64199"
   ],
   "botUsername": "Bot",
   "botChunk": 1,
