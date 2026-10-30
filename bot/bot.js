@@ -288,7 +288,6 @@ function setMovement(enabled) {
     try {
       if (!danceEnabled) {
         s.state.bot?.pathfinder?.setGoal(null);
-        s.state.startWandering = s.state.startWandering;
       } else if (s.state.startWandering) {
         s.state.startWandering();
       }
