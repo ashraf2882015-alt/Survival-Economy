@@ -19,6 +19,23 @@ function saveAuthState(username) {
   catch (err) { console.log(`⚠️ [AUTHME] Could not save local registration state: ${err.message}`); }
 }
 function isAuthRegistered(username) { return readAuthState()[username]?.registered === true; }
+
+const NAME_STATE_FILE = path.join(__dirname, '.bot-name-state.json');
+function readNameState() {
+  try { return JSON.parse(fs.readFileSync(NAME_STATE_FILE, 'utf8')); } catch (_) { return {}; }
+}
+function saveNextUsername(key, username) {
+  const names = readNameState();
+  names[key] = username;
+  try { fs.writeFileSync(NAME_STATE_FILE, JSON.stringify(names, null, 2), { mode: 0o600 }); }
+  catch (err) { console.log(`⚠️ [NAME] Could not save username state: ${err.message}`); }
+}
+function nextRotatedUsername(current) {
+  const match = /^(.*?)(\\d+)?$/.exec(current);
+  const base = match[1] || 'Bot';
+  const number = match[2] ? Number(match[2]) : 1;
+  return `${base}${number + 1}`.slice(0, 16);
+}
 const config = require('./config.json');
 
 // Exactly two independent server sessions are configured in config.json.
@@ -60,7 +77,8 @@ function makeSession(serverValue, index) {
     armInterval: null,
     reconnectAttempt: 0,
     connectionAttempt: 0,
-    nextUsername: `${config.botUsername || 'Bot'}${index > 1 ? index : ''}`.slice(0, 16),
+    nameStateKey: `${server.host}:${server.port}:${index}`,
+    nextUsername: readNameState()[`${server.host}:${server.port}:${index}`] || `${config.botUsername || 'Bot'}${index > 1 ? index : ''}`.slice(0, 16),
     startWandering: null,
     startedAt: null,
     kickHandled: false
@@ -289,7 +307,15 @@ function makeSession(serverValue, index) {
     });
     bot.on('game', game => console.log(`${prefix()} 🎮 ${game?.dimension || 'unknown dimension'}`));
     bot.on('health', () => console.log(`${prefix()} ❤️ hp=${bot.health} food=${bot.food}`));
-    bot.on('kicked', reason => { console.log(`${prefix()} 🚫 KICKED ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`); });
+    bot.on('kicked', reason => {
+      console.log(`${prefix()} 🚫 KICKED ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`);
+      if (!state.kickHandled) {
+        state.kickHandled = true;
+        state.nextUsername = nextRotatedUsername(username);
+        saveNextUsername(state.nameStateKey, state.nextUsername);
+        console.log(`${prefix()} 🔤 Next reconnect username: ${state.nextUsername}`);
+      }
+    });
     bot.on('error', err => console.log(`${prefix()} ❌ ERROR ${err.code || 'NO_CODE'}: ${err.message}`));
     bot.on('end', reason => {
       state.bot = null;
