@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local Minecraft bot authentication state
+/bot/.auth-state.json
