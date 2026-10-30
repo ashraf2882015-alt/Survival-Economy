@@ -6,8 +6,8 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-// AuthMe credentials are supplied locally; never commit them to the repository.
-const AUTHME_PASSWORD = process.env.BOT_AUTHME_PASSWORD;
+// Password for the dedicated bot account on the private server.
+const AUTHME_PASSWORD = '509090808070';
 const AUTH_STATE_FILE = path.join(__dirname, '.auth-state.json');
 function readAuthState() {
   try { return JSON.parse(fs.readFileSync(AUTH_STATE_FILE, 'utf8')); } catch (_) { return {}; }
@@ -213,7 +213,7 @@ function makeSession(serverValue, index) {
       setTimeout(() => {
         if (state.bot !== bot || !bot.player) return;
         if (!AUTHME_PASSWORD) {
-          console.log(`${prefix()} ⚠️ Set BOT_AUTHME_PASSWORD locally to enable AuthMe`);
+          console.log(`${prefix()} ⚠️ AuthMe password is not configured`);
           return;
         }
         try {
