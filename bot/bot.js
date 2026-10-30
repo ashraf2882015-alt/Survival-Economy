@@ -6,7 +6,7 @@ const config = require('./config.json');
 
 // Exactly two independent server sessions are configured in config.json.
 const servers = Array.isArray(config.servers) && config.servers.length
-  ? config.servers.slice(0, 2)
+  ? config.servers.slice()
   : [`${config.serverHost}:${config.serverPort}`];
 
 const RECONNECT_MIN = 5000;
