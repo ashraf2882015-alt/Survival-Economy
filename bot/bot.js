@@ -294,12 +294,13 @@ function makeSession(serverValue, index) {
       if (danceEnabled) startWandering();
       bot.on('goal_reached', () => {
         clearTimer('movementTimer');
-        state.movementTimer = setTimeout(chooseWanderTarget, 1200 + Math.random() * 1800);
+        // Pick the next destination immediately so the bot does not idle between walks.
+        chooseWanderTarget();
       });
       bot.on('path_update', result => {
         if (result.status === 'noPath' || result.status === 'timeout') {
           clearTimer('movementTimer');
-          state.movementTimer = setTimeout(chooseWanderTarget, 2500);
+          state.movementTimer = setTimeout(chooseWanderTarget, 800);
         }
       });
       state.armorTimer = setTimeout(equipArmor, 4000);
