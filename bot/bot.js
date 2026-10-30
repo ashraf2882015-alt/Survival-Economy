@@ -1,4 +1,5 @@
 const mineflayer = require('mineflayer');
+const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
 const net = require('net');
 const dns = require('dns');
 const https = require('https');
@@ -42,8 +43,8 @@ function makeSession(serverValue, index) {
     armInterval: null,
     reconnectAttempt: 0,
     connectionAttempt: 0,
-    kickRenameCount: 0,
     nextUsername: `${config.botUsername || 'Bot'}${index > 1 ? index : ''}`.slice(0, 16),
+    startWandering: null,
     startedAt: null,
     kickHandled: false
   };
@@ -66,17 +67,12 @@ function makeSession(serverValue, index) {
   }
   function cleanup() {
     clearTimer('movementTimer');
+    state.startWandering = null;
+    try { state.bot?.pathfinder?.setGoal(null); } catch (_) {}
     clearTimer('armorTimer');
     clearTimer('spawnTimer');
     clearIntervalTimer('armInterval');
     stopMovement();
-  }
-  function changeNameAfterKick() {
-    if (state.kickHandled) return;
-    state.kickHandled = true;
-    state.kickRenameCount += 1;
-    state.nextUsername = `SurvivalBot${String(state.kickRenameCount).padStart(3, '0')}`.slice(0, 16);
-    console.log(`${prefix()} 🔄 Kick #${state.kickRenameCount} → ${state.nextUsername}`);
   }
   function scheduleReconnect(reason) {
     if (shuttingDown || state.reconnectTimer) return;
@@ -120,7 +116,6 @@ function makeSession(serverValue, index) {
     if (shuttingDown || state.bot) return;
     cleanup();
     state.connectionAttempt += 1;
-    state.kickHandled = false;
     const username = state.nextUsername;
     console.log(`\n${prefix()} ================ ATTEMPT #${state.connectionAttempt} ================`);
     console.log(`${prefix()} 👤 ${username}`);
@@ -147,7 +142,6 @@ function makeSession(serverValue, index) {
 
     const bot = state.bot;
     let danceIndex = 0;
-    const danceSteps = [['forward',1200],['left',850],['back',1100],['right',850],['forward',1000],['right',850],['back',1100],['left',850]];
     const armorSlots = {
       head:['netherite_helmet','diamond_helmet','iron_helmet','golden_helmet','chainmail_helmet','leather_helmet'],
       torso:['netherite_chestplate','diamond_chestplate','iron_chestplate','golden_chestplate','chainmail_chestplate','leather_chestplate'],
@@ -159,19 +153,26 @@ function makeSession(serverValue, index) {
       if (!bot?.entity) return;
       try { bot.look(bot.entity.yaw + (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 0.35, true); } catch (_) {}
     }
-    function danceStep() {
+    function chooseWanderTarget() {
       if (!bot?.entity || shuttingDown || !danceEnabled) return;
-      for (const key of ['forward','back','left','right']) { try { bot.setControlState(key, false); } catch (_) {} }
-      const [direction, duration] = danceSteps[danceIndex];
-      danceIndex = (danceIndex + 1) % danceSteps.length;
+      const pos = bot.entity.position;
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 8 + Math.random() * 12;
+      const x = Math.floor(pos.x + Math.cos(angle) * distance);
+      const z = Math.floor(pos.z + Math.sin(angle) * distance);
+      const y = Math.floor(pos.y);
       try {
-        bot.setControlState(direction, true);
-        if (chance(35)) { bot.setControlState('jump', true); setTimeout(() => { try { bot.setControlState('jump', false); } catch (_) {} }, 220); }
-        lookAround();
-        if (chance(35)) bot.swingArm();
-      } catch (_) {}
-      console.log(`${prefix()} 💃 ${direction} ${duration}ms`);
-      state.movementTimer = setTimeout(danceStep, duration);
+        bot.pathfinder.setGoal(new GoalNear(x, y, z, 2));
+        console.log(`${prefix()} 🧭 Wandering toward ${x}, ${y}, ${z}`);
+      } catch (err) {
+        console.log(`${prefix()} ⚠️ Path goal: ${err.message}`);
+        state.movementTimer = setTimeout(chooseWanderTarget, 3000);
+      }
+    }
+    function startWandering() {
+      if (!bot?.entity || shuttingDown || !danceEnabled) return;
+      clearTimer('movementTimer');
+      chooseWanderTarget();
     }
     async function equipArmor() {
       if (!bot?.entity || armorBusy) return;
@@ -188,6 +189,7 @@ function makeSession(serverValue, index) {
       } finally { armorBusy = false; }
     }
 
+    bot.loadPlugin(pathfinder);
     bot.once('login', () => console.log(`${prefix()} 🔐 Login accepted as ${username}`));
     bot.once('spawn', () => {
       state.reconnectAttempt = 0;
@@ -195,13 +197,30 @@ function makeSession(serverValue, index) {
       clearTimer('spawnTimer');
       console.log(`${prefix()} 🎉 SPAWN SUCCESS — ${username}`);
       if (bot.entity?.position) console.log(`${prefix()} 📍 ${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.y.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}`);
-      if (danceEnabled) { danceIndex = 0; clearTimer('movementTimer'); danceStep(); }
+      const movement = new Movements(bot);
+      movement.canDig = false;
+      movement.allow1by1towers = false;
+      movement.allowParkour = false;
+      movement.allowSprinting = true;
+      bot.pathfinder.setMovements(movement);
+      state.startWandering = startWandering;
+      if (danceEnabled) startWandering();
+      bot.on('goal_reached', () => {
+        clearTimer('movementTimer');
+        state.movementTimer = setTimeout(chooseWanderTarget, 1200 + Math.random() * 1800);
+      });
+      bot.on('path_update', result => {
+        if (result.status === 'noPath' || result.status === 'timeout') {
+          clearTimer('movementTimer');
+          state.movementTimer = setTimeout(chooseWanderTarget, 2500);
+        }
+      });
       state.armorTimer = setTimeout(equipArmor, 4000);
       state.armInterval = setInterval(() => { if (bot?.entity && chance(70)) lookAround(); }, 8000);
     });
     bot.on('game', game => console.log(`${prefix()} 🎮 ${game?.dimension || 'unknown dimension'}`));
     bot.on('health', () => console.log(`${prefix()} ❤️ hp=${bot.health} food=${bot.food}`));
-    bot.on('kicked', reason => { console.log(`${prefix()} 🚫 KICKED ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`); changeNameAfterKick(); });
+    bot.on('kicked', reason => { console.log(`${prefix()} 🚫 KICKED ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`); });
     bot.on('error', err => console.log(`${prefix()} ❌ ERROR ${err.code || 'NO_CODE'}: ${err.message}`));
     bot.on('end', reason => {
       state.bot = null;
@@ -265,7 +284,16 @@ function setNameAll(name) {
 }
 function setMovement(enabled) {
   danceEnabled = Boolean(enabled);
-  if (!danceEnabled) sessions.forEach(s => { try { s.state.bot?.setControlState('forward', false); s.state.bot?.setControlState('back', false); s.state.bot?.setControlState('left', false); s.state.bot?.setControlState('right', false); } catch (_) {} });
+  sessions.forEach(s => {
+    try {
+      if (!danceEnabled) {
+        s.state.bot?.pathfinder?.setGoal(null);
+        s.state.startWandering = s.state.startWandering;
+      } else if (s.state.startWandering) {
+        s.state.startWandering();
+      }
+    } catch (_) {}
+  });
 }
 
 function pollControl() {
@@ -303,9 +331,8 @@ console.log(`🎯 Servers: ${servers.length}`);
 servers.forEach((s, i) => console.log(`   ${i + 1}. ${s}`));
 console.log(`👤 Base username: ${config.botUsername || 'Bot'}`);
 console.log('♾️ Continuous retry: ENABLED');
-console.log('🧍 Natural movement: ENABLED');
-console.log('💃 Dance movement: ENABLED');
-console.log('🔄 Kick → rename → reconnect: ENABLED');
+console.log('🧭 Free roaming with pathfinder: ENABLED');
+console.log('🔄 Reconnect on disconnect: ENABLED');
 console.log('🛡️ Entity-movement watchdog: DISABLED');
 console.log('🎛️ GitHub control polling: ENABLED');
 console.log('============================================================');
