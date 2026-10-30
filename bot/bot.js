@@ -259,10 +259,9 @@ function makeSession(serverValue, index) {
       movement.allowSprinting = true;
       bot.pathfinder.setMovements(movement);
 
-      // Keep roaming: if progress stops, simply pick another random destination.
+      // Check every 500ms and choose a new destination when movement stalls.
       // Collisions are acceptable; the goal is to keep the bot moving.
       let lastPosition = bot.entity.position.clone();
-      let stuckChecks = 0;
       state.stuckTimer = setInterval(() => {
         if (!bot?.entity || shuttingDown || !danceEnabled) return;
         const current = bot.entity.position;
@@ -270,13 +269,6 @@ function makeSession(serverValue, index) {
         lastPosition = current.clone();
 
         if (bot.pathfinder.isMoving() && moved < 0.08) {
-          stuckChecks += 1;
-        } else {
-          stuckChecks = 0;
-        }
-
-        if (stuckChecks >= 3) {
-          stuckChecks = 0;
           try {
             chooseWanderTarget();
             console.log(`${prefix()} 🔀 Movement stalled — picking another random destination`);
@@ -284,7 +276,7 @@ function makeSession(serverValue, index) {
             console.log(`${prefix()} ⚠️ Could not pick another destination: ${err.message}`);
           }
         }
-      }, 1000);
+      }, 500);
 
       state.startWandering = startWandering;
       if (danceEnabled) startWandering();
