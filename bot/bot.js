@@ -259,7 +259,8 @@ function makeSession(serverValue, index) {
       movement.allowSprinting = true;
       bot.pathfinder.setMovements(movement);
 
-      // If pathfinder keeps trying but the bot barely moves, assume it bumped into an obstacle.
+      // Detect a blocked route quickly, mark the solid block ahead as undesirable,
+      // then immediately request a fresh random destination.
       let lastPosition = bot.entity.position.clone();
       let stuckChecks = 0;
       state.stuckTimer = setInterval(() => {
@@ -268,7 +269,7 @@ function makeSession(serverValue, index) {
         const moved = current.distanceTo(lastPosition);
         lastPosition = current.clone();
 
-        if (bot.pathfinder.isMoving() && moved < 0.12) {
+        if (bot.pathfinder.isMoving() && moved < 0.18) {
           stuckChecks += 1;
         } else {
           stuckChecks = 0;
@@ -276,19 +277,24 @@ function makeSession(serverValue, index) {
 
         if (stuckChecks >= 2) {
           stuckChecks = 0;
-          const turnAngle = bot.entity.yaw + Math.PI + (Math.random() - 0.5) * 0.7;
-          const distance = 7 + Math.random() * 5;
-          const x = Math.floor(current.x - Math.sin(turnAngle) * distance);
-          const z = Math.floor(current.z + Math.cos(turnAngle) * distance);
-          const y = Math.floor(current.y);
+          const yaw = bot.entity.yaw;
+          const dx = -Math.sin(yaw);
+          const dz = Math.cos(yaw);
+          for (const height of [0, 1]) {
+            const ahead = bot.blockAt(current.offset(Math.round(dx), height, Math.round(dz)));
+            if (ahead && ahead.boundingBox === 'block') {
+              movement.blocksToAvoid.add(ahead.type);
+            }
+          }
           try {
-            bot.pathfinder.setGoal(new GoalNear(x, y, z, 2));
-            console.log(`${prefix()} ↩️ Obstacle detected — turning around toward ${x}, ${y}, ${z}`);
+            bot.pathfinder.setMovements(movement);
+            chooseWanderTarget();
+            console.log(`${prefix()} ↩️ Blocked — avoiding nearby block and choosing a new route`);
           } catch (err) {
-            console.log(`${prefix()} ⚠️ Could not change direction: ${err.message}`);
+            console.log(`${prefix()} ⚠️ Could not change route: ${err.message}`);
           }
         }
-      }, 1000);
+      }, 700);
 
       state.startWandering = startWandering;
       if (danceEnabled) startWandering();
