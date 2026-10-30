@@ -259,8 +259,8 @@ function makeSession(serverValue, index) {
       movement.allowSprinting = true;
       bot.pathfinder.setMovements(movement);
 
-      // Detect a blocked route quickly, mark the solid block ahead as undesirable,
-      // then immediately request a fresh random destination.
+      // Keep roaming: if progress stops, simply pick another random destination.
+      // Collisions are acceptable; the goal is to keep the bot moving.
       let lastPosition = bot.entity.position.clone();
       let stuckChecks = 0;
       state.stuckTimer = setInterval(() => {
@@ -269,32 +269,22 @@ function makeSession(serverValue, index) {
         const moved = current.distanceTo(lastPosition);
         lastPosition = current.clone();
 
-        if (bot.pathfinder.isMoving() && moved < 0.18) {
+        if (bot.pathfinder.isMoving() && moved < 0.08) {
           stuckChecks += 1;
         } else {
           stuckChecks = 0;
         }
 
-        if (stuckChecks >= 2) {
+        if (stuckChecks >= 3) {
           stuckChecks = 0;
-          const yaw = bot.entity.yaw;
-          const dx = -Math.sin(yaw);
-          const dz = Math.cos(yaw);
-          for (const height of [0, 1]) {
-            const ahead = bot.blockAt(current.offset(Math.round(dx), height, Math.round(dz)));
-            if (ahead && ahead.boundingBox === 'block') {
-              movement.blocksToAvoid.add(ahead.type);
-            }
-          }
           try {
-            bot.pathfinder.setMovements(movement);
             chooseWanderTarget();
-            console.log(`${prefix()} ↩️ Blocked — avoiding nearby block and choosing a new route`);
+            console.log(`${prefix()} 🔀 Movement stalled — picking another random destination`);
           } catch (err) {
-            console.log(`${prefix()} ⚠️ Could not change route: ${err.message}`);
+            console.log(`${prefix()} ⚠️ Could not pick another destination: ${err.message}`);
           }
         }
-      }, 700);
+      }, 1000);
 
       state.startWandering = startWandering;
       if (danceEnabled) startWandering();
