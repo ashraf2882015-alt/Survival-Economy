@@ -193,6 +193,21 @@ function makeSession(serverValue, index) {
     bot.once('login', () => console.log(`${prefix()} 🔐 Login accepted as ${username}`));
     bot.once('spawn', () => {
       state.reconnectAttempt = 0;
+      const authPassword = process.env.BOT_AUTHME_PASSWORD;
+      if (authPassword) {
+        setTimeout(() => {
+          if (state.bot === bot && bot.player) {
+            try {
+              bot.chat(`/login ${authPassword}`);
+              console.log(`${prefix()} 🔐 AuthMe login command sent`);
+            } catch (err) {
+              console.log(`${prefix()} ⚠️ AuthMe login command failed: ${err.message}`);
+            }
+          }
+        }, 1500);
+      } else {
+        console.log(`${prefix()} ⚠️ AuthMe password not set; define BOT_AUTHME_PASSWORD`);
+      }
       state.startedAt = Date.now();
       clearTimer('spawnTimer');
       console.log(`${prefix()} 🎉 SPAWN SUCCESS — ${username}`);
