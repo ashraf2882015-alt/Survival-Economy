@@ -238,7 +238,7 @@ function makeSession(serverValue, index) {
         } catch (err) {
           console.log(`${prefix()} ⚠️ AuthMe command failed: ${err.message}`);
         }
-      }, 1800);
+      }, 1000);
       state.startedAt = Date.now();
       clearTimer('spawnTimer');
       console.log(`${prefix()} 🎉 SPAWN SUCCESS — ${username}`);
